@@ -393,7 +393,7 @@ cmd_branches() {
   while [ $# -gt 0 ]; do
     case "$1" in --json) json=1; shift ;; *) shift ;; esac
   done
-  [ -n "$account" ] && [ -n "$ref" ] || die "usage: supa-mcp branches <account> <project-ref> [--json]"
+  if [ -z "$account" ] || [ -z "$ref" ]; then die "usage: supa-mcp branches <account> <project-ref> [--json]"; fi
   local bj; bj="$(branches_json "$account" "$ref")" || die "could not list branches for '$ref' on account '$account'"
   if [ "$json" = "1" ]; then
     printf '%s\n' "$bj"
@@ -520,7 +520,11 @@ cmd_status() {
 
   local entry url helper ref ro account
   entry="$(mcp_entry "$file" "$server")"
-  [ -n "$entry" ] || { [ "$json" = "1" ] && jq -n --arg s "$server" '{linked:false, server:$s}' || printf 'No "%s" server in %s\n' "$server" "$file"; return 0; }
+  if [ -z "$entry" ]; then
+    if [ "$json" = "1" ]; then jq -n --arg s "$server" '{linked:false, server:$s}'
+    else printf 'No "%s" server in %s\n' "$server" "$file"; fi
+    return 0
+  fi
 
   url="$(printf '%s' "$entry" | jq -r '.url // ""')"
   helper="$(printf '%s' "$entry" | jq -r '.headersHelper // ""')"

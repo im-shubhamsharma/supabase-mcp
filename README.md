@@ -1,11 +1,34 @@
 # supa-mcp
 
+![platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey)
+![license: MIT](https://img.shields.io/badge/license-MIT-blue)
+![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A2BE2)
+
 Per-project Supabase MCP switcher for Claude Code, for people who work across several
 Supabase projects on more than one account.
 
 Open Claude Code in a project directory and its Supabase MCP connects to exactly that
 project's database, on the correct account, read-only by default. Tokens stay encrypted in
 the macOS Keychain and never touch disk.
+
+This is a free, open-source (MIT) community project. It is not an official Supabase or
+Anthropic product.
+
+## Contents
+
+- [The problem](#the-problem)
+- [How it works](#how-it-works)
+- [Security](#security)
+- [Requirements](#requirements)
+- [Install](#install)
+- [Quick start](#quick-start)
+- [Commands](#commands)
+- [The wrong-account guard](#the-wrong-account-guard)
+- [Troubleshooting](#troubleshooting)
+- [Uninstall](#uninstall)
+- [Limitations](#limitations)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## The problem
 
@@ -92,6 +115,10 @@ new machine you register that machine's own accounts with `supa-mcp account add 
 
 ## Quick start
 
+Create a Personal Access Token for each Supabase login at
+<https://supabase.com/dashboard/account/tokens>. You need one token per account (not per
+organization or project).
+
 ```
 # 1. Register each account (prompts for the token, hidden input, stored in the Keychain)
 supa-mcp account add personal
@@ -133,9 +160,55 @@ Inside Claude Code you can drive the same steps with `/supa-add`, `/supa-link`,
 `account_verified: false` so you catch a mislinked directory before you run anything
 against it.
 
+## Troubleshooting
+
+Run `supa-mcp doctor` first — it checks dependencies, PATH, and the current directory in
+one shot.
+
+| Symptom | Fix |
+| --- | --- |
+| `supa-mcp: command not found` | `~/.local/bin` is not on your PATH. Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc`, then open a new terminal. |
+| `missing dependency: jq` | `brew install jq`. `curl` and `security` already ship with macOS. |
+| The Supabase MCP does not appear in Claude Code | You must start a **fresh** Claude Code session in the linked directory. Accept the workspace-trust prompt. Check the binding with `supa-mcp status`. |
+| A macOS Keychain prompt keeps appearing | Choose **Always Allow** on the `supa-mcp` prompt so it stays silent afterward. |
+| `status` shows `account_verified: false` | The pinned project does not belong to the linked account (wrong account). Re-link with the correct `--account`. See [the wrong-account guard](#the-wrong-account-guard). |
+| `token stored, but the validation call failed` | The token is invalid or the network is down. Create a new token and re-run `supa-mcp account add <name>`. |
+| Writes are rejected | Links are read-only by default. Re-link with `--write` to allow writes from that directory. |
+
+## Uninstall
+
+```
+# Remove a single account and its Keychain token
+supa-mcp account remove <name>
+
+# Remove the Supabase server from the current directory's .mcp.json
+supa-mcp unlink
+
+# Remove the CLI symlink and config (tokens in the Keychain are removed per-account above)
+rm -f ~/.local/bin/supa-mcp
+rm -rf ~/.config/supa-mcp
+```
+
+To remove the Claude Code plugin, run `/plugin uninstall supa-mcp@supa-mcp` inside Claude
+Code.
+
 ## Limitations
 
 - macOS only for now. Linux and Windows are a planned follow-up (swap `security` for
   `secret-tool` or Credential Manager).
 - One connection per directory by default. You can add more with `--name` (for example a
   separate staging project in the same repo).
+
+## Contributing
+
+Issues and pull requests are welcome at
+<https://github.com/im-shubhamsharma/supabase-mcp>. Good first areas: Linux/Windows
+Keychain backends, additional tests, and docs. The CLI is a single POSIX-ish Bash script
+(`bin/supa-mcp`) with no build step, so a change is easy to try: edit the script and run
+`supa-mcp doctor`.
+
+Please do not include real tokens, project refs, or account names in issues or PRs.
+
+## License
+
+MIT © Shubham Sharma. See [LICENSE](LICENSE).

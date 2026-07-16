@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Test stub for macOS `security`. Backs the "Keychain" onto files under
+# $SUPA_MCP_TEST_KC so tests never touch the real login Keychain.
+set -u
+store="${SUPA_MCP_TEST_KC:?SUPA_MCP_TEST_KC not set}"
+mkdir -p "$store"
+
+sub="${1:-}"; shift || true
+acct=""; token=""; want_w=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -a) acct="${2:-}"; shift 2 ;;
+    -s) shift 2 ;;                 # service name, ignored (single namespace)
+    -w) if [ $# -ge 2 ] && [ "$sub" = "add-generic-password" ]; then token="${2:-}"; shift 2; else want_w=1; shift; fi ;;
+    -U) shift ;;
+    *) shift ;;
+  esac
+done
+
+file="$store/$acct"
+case "$sub" in
+  add-generic-password)
+    printf '%s' "$token" > "$file" ;;
+  find-generic-password)
+    [ -f "$file" ] || exit 44
+    if [ "$want_w" = "1" ]; then cat "$file"; fi ;;
+  delete-generic-password)
+    [ -f "$file" ] || exit 44
+    rm -f "$file" ;;
+  *) exit 1 ;;
+esac

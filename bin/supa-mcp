@@ -1,23 +1,26 @@
 #!/usr/bin/env bash
 #
-# supa-mcp - per-project Supabase MCP switcher for Claude Code (macOS).
+# supa-mcp - per-project Supabase MCP switcher for Claude Code.
 #
 # Each project directory gets its own .mcp.json that pins one Supabase project
-# and the account it belongs to. Personal Access Tokens live only in the macOS
-# login Keychain (service "supa-mcp"), encrypted at rest. They are never written
-# to .mcp.json, the registry, env, or git. At connection time Claude Code runs
-# `supa-mcp headers --account <name>`, which reads the token from the Keychain in
-# memory and prints the Authorization header.
+# and the account it belongs to. Personal Access Tokens live only in the OS
+# keychain (macOS Keychain via `security`, or Linux libsecret via `secret-tool`),
+# encrypted at rest. They are never written to .mcp.json, the registry, env, or
+# git. At connection time Claude Code runs `supa-mcp headers --account <name>`,
+# which reads the token from the keychain in memory and prints the Authorization
+# header.
 #
 # See README.md for the full model.
 
 set -uo pipefail
 
+VERSION="0.2.0"
 SERVICE="supa-mcp"
-API_BASE="https://api.supabase.com"
-MCP_BASE="https://mcp.supabase.com/mcp"
+API_BASE="${SUPA_MCP_API_BASE:-https://api.supabase.com}"
+MCP_BASE="${SUPA_MCP_MCP_BASE:-https://mcp.supabase.com/mcp}"
 CONFIG_DIR="${SUPA_MCP_CONFIG_DIR:-$HOME/.config/supa-mcp}"
 REGISTRY="$CONFIG_DIR/registry.json"
+LINKS="$CONFIG_DIR/links.json"
 DEFAULT_SERVER="supabase"
 
 # ---------------------------------------------------------------------------
@@ -31,38 +34,75 @@ need() {
   command -v "$1" >/dev/null 2>&1 || die "missing dependency: $1 (install it and retry)"
 }
 
+# The keychain backend: explicit override, else per-OS default.
+kc_backend() {
+  if [ -n "${SUPA_MCP_KEYCHAIN:-}" ]; then printf '%s' "$SUPA_MCP_KEYCHAIN"; return 0; fi
+  case "$(uname -s)" in
+    Darwin) printf 'security' ;;
+    Linux)  printf 'secret-tool' ;;
+    *)      printf 'security' ;;
+  esac
+}
+
 require_deps() {
   need jq
   need curl
-  need security
+  case "$(kc_backend)" in
+    security)    need security ;;
+    secret-tool) need secret-tool ;;
+    *) die "unsupported keychain backend '$(kc_backend)' (set SUPA_MCP_KEYCHAIN to 'security' or 'secret-tool')" ;;
+  esac
 }
 
 ensure_registry() {
   mkdir -p "$CONFIG_DIR" || die "cannot create $CONFIG_DIR"
-  if [ ! -f "$REGISTRY" ]; then
-    printf '{"accounts":[]}\n' > "$REGISTRY"
-  fi
+  [ -f "$REGISTRY" ] || printf '{"accounts":[]}\n' > "$REGISTRY"
+}
+
+ensure_links() {
+  ensure_registry
+  [ -f "$LINKS" ] || printf '{"links":[]}\n' > "$LINKS"
 }
 
 # ---------------------------------------------------------------------------
-# Keychain (encrypted token storage)
+# Keychain (encrypted token storage, cross-platform)
 # ---------------------------------------------------------------------------
 
 kc_set() { # account token
-  security add-generic-password -U -s "$SERVICE" -a "$1" -w "$2" \
-    >/dev/null 2>&1 || die "failed to write token to Keychain for '$1'"
+  case "$(kc_backend)" in
+    security)
+      security add-generic-password -U -s "$SERVICE" -a "$1" -w "$2" \
+        >/dev/null 2>&1 || die "failed to write token to Keychain for '$1'" ;;
+    secret-tool)
+      printf '%s' "$2" | secret-tool store --label="$SERVICE: $1" \
+        service "$SERVICE" account "$1" >/dev/null 2>&1 \
+        || die "failed to write token to libsecret for '$1'" ;;
+    *) die "unsupported keychain backend '$(kc_backend)' (set SUPA_MCP_KEYCHAIN to 'security' or 'secret-tool')" ;;
+  esac
 }
 
 kc_get() { # account -> token on stdout (empty + non-zero if absent)
-  security find-generic-password -s "$SERVICE" -a "$1" -w 2>/dev/null
+  case "$(kc_backend)" in
+    security)    security find-generic-password -s "$SERVICE" -a "$1" -w 2>/dev/null ;;
+    secret-tool) secret-tool lookup service "$SERVICE" account "$1" 2>/dev/null ;;
+    *) return 3 ;;
+  esac
 }
 
 kc_has() { # account
-  security find-generic-password -s "$SERVICE" -a "$1" -w >/dev/null 2>&1
+  case "$(kc_backend)" in
+    security)    security find-generic-password -s "$SERVICE" -a "$1" -w >/dev/null 2>&1 ;;
+    secret-tool) secret-tool lookup service "$SERVICE" account "$1" >/dev/null 2>&1 ;;
+    *) return 3 ;;
+  esac
 }
 
 kc_del() { # account
-  security delete-generic-password -s "$SERVICE" -a "$1" >/dev/null 2>&1
+  case "$(kc_backend)" in
+    security)    security delete-generic-password -s "$SERVICE" -a "$1" >/dev/null 2>&1 ;;
+    secret-tool) secret-tool clear service "$SERVICE" account "$1" >/dev/null 2>&1 ;;
+    *) return 3 ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
@@ -93,6 +133,28 @@ reg_known() { # name -> 0 if present
 }
 
 # ---------------------------------------------------------------------------
+# Links registry (which directories are linked to what)
+# ---------------------------------------------------------------------------
+
+links_upsert() { # dir server account ref mode
+  ensure_links
+  local tmp; tmp="$(mktemp)"
+  jq --arg dir "$1" --arg s "$2" --arg a "$3" --arg r "$4" --arg m "$5" '
+    .links = ((.links // [])
+      | map(select((.dir==$dir and .server==$s) | not))
+      + [{dir:$dir, server:$s, account:$a, project_ref:$r, mode:$m}])
+  ' "$LINKS" > "$tmp" && mv "$tmp" "$LINKS"
+}
+
+links_remove() { # dir server
+  ensure_links
+  local tmp; tmp="$(mktemp)"
+  jq --arg dir "$1" --arg s "$2" '
+    .links = ((.links // []) | map(select((.dir==$dir and .server==$s) | not)))
+  ' "$LINKS" > "$tmp" && mv "$tmp" "$LINKS"
+}
+
+# ---------------------------------------------------------------------------
 # Supabase Management API
 # ---------------------------------------------------------------------------
 
@@ -107,8 +169,7 @@ api_get() {
     "$API_BASE$path"
 }
 
-# Enriched project list for an account:
-# [{ref,name,org_id,org_name,region}]
+# Enriched project list for an account: [{ref,name,org_id,org_name,region}]
 projects_json() { # account
   local account="$1" orgs projects
   orgs="$(api_get "$account" /v1/organizations)" || return 1
@@ -126,16 +187,76 @@ projects_json() { # account
   '
 }
 
+# Branch list for a project: [{id,name,project_ref,is_default,status}]
+branches_json() { # account project_ref
+  local account="$1" ref="$2" raw
+  raw="$(api_get "$account" "/v1/projects/$ref/branches")" || return 1
+  jq -n --argjson b "$raw" '
+    $b | map({
+      id: .id,
+      name: (.name // .git_branch // "unknown"),
+      project_ref: (.project_ref // ""),
+      is_default: (.is_default // false),
+      status: (.status // "")
+    })
+  '
+}
+
 # ---------------------------------------------------------------------------
 # .mcp.json helpers (project scope, current directory)
 # ---------------------------------------------------------------------------
 
 mcp_file() { printf '%s/.mcp.json' "$(pwd)"; }
 
-build_url() { # ref readonly(true|false)
-  local ref="$1" ro="$2" url="$MCP_BASE?project_ref=$ref"
+build_url() { # ref ro(true|false)
+  local ref="$1" ro="$2"
+  local url="$MCP_BASE?project_ref=$ref"
   [ "$ro" = "true" ] && url="$url&read_only=true"
   printf '%s' "$url"
+}
+
+# Echo the JSON entry for a server in a file, or empty.
+mcp_entry() { # file server
+  jq -c --arg k "$2" '.mcpServers[$k] // empty' "$1" 2>/dev/null
+}
+
+# Write (or overwrite) one server entry in ./.mcp.json and record the link.
+link_write() { # account ref server ro json
+  local account="$1" ref="$2" server="$3" ro="$4" json="$5"
+  local url helper file tmp mode
+  url="$(build_url "$ref" "$ro")"
+  helper="supa-mcp headers --account $account"
+  file="$(mcp_file)"
+
+  if [ -f "$file" ]; then
+    jq -e . "$file" >/dev/null 2>&1 || die "$file exists but is not valid JSON; not overwriting"
+  fi
+
+  tmp="$(mktemp)"
+  jq -n \
+     --slurpfile existing <(cat "$file" 2>/dev/null || printf '{}') \
+     --arg key "$server" --arg url "$url" --arg helper "$helper" '
+       ($existing[0] // {}) as $base
+       | $base
+       | .mcpServers = ((.mcpServers // {}) + {
+           ($key): {type:"http", url:$url, headersHelper:$helper}
+         })
+     ' > "$tmp" || die "failed to build .mcp.json"
+  mv "$tmp" "$file"
+
+  mode="$([ "$ro" = "true" ] && echo read-only || echo read-write)"
+  links_upsert "$(pwd)" "$server" "$account" "$ref" "$mode"
+
+  if [ "$json" = "1" ]; then
+    jq -n --arg account "$account" --arg ref "$ref" --arg server "$server" \
+          --arg mode "$mode" --arg file "$file" \
+          '{ok:true, account:$account, project_ref:$ref, server:$server, mode:$mode, file:$file}'
+  else
+    printf 'Linked "%s" -> account "%s", project %s (%s).\n' \
+      "$server" "$account" "$ref" "$mode" >&2
+    printf 'Wrote %s\n' "$file" >&2
+    printf 'Restart Claude Code in this directory (accept the trust + Keychain prompts) to connect.\n' >&2
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -182,8 +303,9 @@ cmd_account() {
       [ -n "$token" ] || die "empty token"
       kc_set "$name" "$token"
       reg_add "$name"
-      printf 'Stored token for "%s" in the macOS Keychain (service "%s").\n' "$name" "$SERVICE" >&2
+      printf 'Stored token for "%s" in the keychain (service "%s").\n' "$name" "$SERVICE" >&2
       printf 'Validating token against the Supabase Management API...\n' >&2
+      local orgs
       if orgs="$(api_get "$name" /v1/organizations 2>/dev/null)"; then
         local count; count="$(printf '%s' "$orgs" | jq 'length')"
         printf 'OK: token is valid and can see %s organization(s).\n' "$count" >&2
@@ -198,12 +320,12 @@ cmd_account() {
         ensure_registry
         jq '{accounts: (.accounts // [])}' "$REGISTRY"
       else
-        local any=0
+        local any=0 a
         while IFS= read -r a; do
           [ -z "$a" ] && continue
           any=1
           if kc_has "$a"; then printf '  %s (token present)\n' "$a"
-          else printf '  %s (NO token in Keychain)\n' "$a"; fi
+          else printf '  %s (NO token in keychain)\n' "$a"; fi
         done < <(reg_accounts)
         [ "$any" = "1" ] || printf 'No accounts registered. Add one: supa-mcp account add <name>\n'
       fi
@@ -213,7 +335,7 @@ cmd_account() {
       [ -n "$name" ] || die "usage: supa-mcp account remove <name>"
       kc_del "$name"
       reg_del "$name"
-      printf 'Removed account "%s" (Keychain token deleted, registry entry removed).\n' "$name" >&2
+      printf 'Removed account "%s" (keychain token deleted, registry entry removed).\n' "$name" >&2
       ;;
     ""|-h|--help)
       cat >&2 <<'EOF'
@@ -232,9 +354,9 @@ cmd_whoami() {
   [ "${2:-}" = "--json" ] && json=1
   [ "$account" = "--json" ] && { json=1; account=""; }
   if [ -z "$account" ]; then
-    # default to the sole account if there is exactly one
-    local names; names="$(reg_accounts)"
-    local n; n="$(printf '%s\n' "$names" | grep -c .)"
+    local names n
+    names="$(reg_accounts)"
+    n="$(printf '%s\n' "$names" | grep -c .)"
     [ "$n" = "1" ] || die "usage: supa-mcp whoami <account> [--json]"
     account="$names"
   fi
@@ -265,8 +387,24 @@ cmd_projects() {
   fi
 }
 
+cmd_branches() {
+  local account="${1:-}" ref="${2:-}" json=0
+  shift 2 2>/dev/null || true
+  while [ $# -gt 0 ]; do
+    case "$1" in --json) json=1; shift ;; *) shift ;; esac
+  done
+  [ -n "$account" ] && [ -n "$ref" ] || die "usage: supa-mcp branches <account> <project-ref> [--json]"
+  local bj; bj="$(branches_json "$account" "$ref")" || die "could not list branches for '$ref' on account '$account'"
+  if [ "$json" = "1" ]; then
+    printf '%s\n' "$bj"
+  else
+    printf 'Branches of %s (account %s):\n' "$ref" "$account"
+    printf '%s\n' "$bj" | jq -r '.[] | "  \(if .is_default then "*" else " " end) \(.name)  [\(.id)]  \(.status)"'
+  fi
+}
+
 cmd_link() {
-  local account="" ref="" server="$DEFAULT_SERVER" readonly="true" json=0
+  local account="" ref="" server="$DEFAULT_SERVER" ro="true" json=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --account) account="${2:-}"; shift 2 ;;
@@ -275,8 +413,8 @@ cmd_link() {
       --project-ref=*) ref="${1#*=}"; shift ;;
       --name) server="${2:-}"; shift 2 ;;
       --name=*) server="${1#*=}"; shift ;;
-      --write) readonly="false"; shift ;;
-      --read-only) readonly="true"; shift ;;
+      --write) ro="false"; shift ;;
+      --read-only) ro="true"; shift ;;
       --json) json=1; shift ;;
       *) die "link: unknown argument: $1" ;;
     esac
@@ -289,7 +427,7 @@ cmd_link() {
     printf 'Account: ' >&2; read -r account < /dev/tty
   fi
   reg_known "$account" || die "unknown account '$account' (add it: supa-mcp account add $account)"
-  kc_has "$account" || die "no token in Keychain for '$account'"
+  kc_has "$account" || die "no token in keychain for '$account'"
 
   if [ -z "$ref" ]; then
     [ -t 0 ] || die "link: --project-ref required"
@@ -300,38 +438,47 @@ cmd_link() {
     [ -n "$ref" ] || die "invalid selection"
   fi
 
-  local url helper file tmp
-  url="$(build_url "$ref" "$readonly")"
-  helper="supa-mcp headers --account $account"
-  file="$(mcp_file)"
+  link_write "$account" "$ref" "$server" "$ro" "$json"
+}
 
-  if [ -f "$file" ]; then
-    jq -e . "$file" >/dev/null 2>&1 || die "$file exists but is not valid JSON; not overwriting"
-  fi
+cmd_switch() {
+  local account="" ref="" server="$DEFAULT_SERVER" ro="" json=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --account) account="${2:-}"; shift 2 ;;
+      --account=*) account="${1#*=}"; shift ;;
+      --project-ref) ref="${2:-}"; shift 2 ;;
+      --project-ref=*) ref="${1#*=}"; shift ;;
+      --name) server="${2:-}"; shift 2 ;;
+      --name=*) server="${1#*=}"; shift ;;
+      --write) ro="false"; shift ;;
+      --read-only) ro="true"; shift ;;
+      --json) json=1; shift ;;
+      *) die "switch: unknown argument: $1" ;;
+    esac
+  done
 
-  tmp="$(mktemp)"
-  jq -n \
-     --slurpfile existing <(cat "$file" 2>/dev/null || printf '{}') \
-     --arg key "$server" --arg url "$url" --arg helper "$helper" '
-       ($existing[0] // {}) as $base
-       | $base
-       | .mcpServers = ((.mcpServers // {}) + {
-           ($key): {type:"http", url:$url, headersHelper:$helper}
-         })
-     ' > "$tmp" || die "failed to build .mcp.json"
-  mv "$tmp" "$file"
+  local file; file="$(mcp_file)"
+  [ -f "$file" ] || die "switch: this directory is not linked (run: supa-mcp link ...)"
+  jq -e . "$file" >/dev/null 2>&1 || die "$file is not valid JSON"
+  local entry; entry="$(mcp_entry "$file" "$server")"
+  [ -n "$entry" ] || die "switch: no \"$server\" server in $file (run: supa-mcp link ...)"
 
-  if [ "$json" = "1" ]; then
-    jq -n --arg account "$account" --arg ref "$ref" --arg server "$server" \
-          --arg mode "$([ "$readonly" = "true" ] && echo read-only || echo read-write)" \
-          --arg file "$file" \
-          '{ok:true, account:$account, project_ref:$ref, server:$server, mode:$mode, file:$file}'
-  else
-    printf 'Linked "%s" -> account "%s", project %s (%s).\n' \
-      "$server" "$account" "$ref" "$([ "$readonly" = "true" ] && echo read-only || echo read-write)" >&2
-    printf 'Wrote %s\n' "$file" >&2
-    printf 'Restart Claude Code in this directory (accept the trust + Keychain prompts) to connect.\n' >&2
-  fi
+  local cur_url cur_helper cur_ref cur_ro cur_acct
+  cur_url="$(printf '%s' "$entry" | jq -r '.url // ""')"
+  cur_helper="$(printf '%s' "$entry" | jq -r '.headersHelper // ""')"
+  cur_ref="$(printf '%s' "$cur_url" | sed -n 's/.*project_ref=\([^&]*\).*/\1/p')"
+  case "$cur_url" in *read_only=true*) cur_ro="true";; *) cur_ro="false";; esac
+  cur_acct="$(printf '%s' "$cur_helper" | sed -n 's/.*--account[ =]\([^ ]*\).*/\1/p')"
+
+  [ -n "$account" ] || account="$cur_acct"
+  [ -n "$ref" ] || ref="$cur_ref"
+  [ -n "$ro" ] || ro="$cur_ro"
+
+  reg_known "$account" || die "unknown account '$account' (add it: supa-mcp account add $account)"
+  kc_has "$account" || die "no token in keychain for '$account'"
+
+  link_write "$account" "$ref" "$server" "$ro" "$json"
 }
 
 cmd_unlink() {
@@ -349,6 +496,7 @@ cmd_unlink() {
   local tmp; tmp="$(mktemp)"
   jq --arg key "$server" 'if .mcpServers then .mcpServers |= del(.[$key]) else . end' \
     "$file" > "$tmp" && mv "$tmp" "$file"
+  links_remove "$(pwd)" "$server"
   printf 'Removed server "%s" from %s\n' "$server" "$file" >&2
 }
 
@@ -370,14 +518,14 @@ cmd_status() {
   fi
   jq -e . "$file" >/dev/null 2>&1 || die "$file is not valid JSON"
 
-  local entry url helper ref readonly account
-  entry="$(jq -c --arg k "$server" '.mcpServers[$k] // empty' "$file")"
+  local entry url helper ref ro account
+  entry="$(mcp_entry "$file" "$server")"
   [ -n "$entry" ] || { [ "$json" = "1" ] && jq -n --arg s "$server" '{linked:false, server:$s}' || printf 'No "%s" server in %s\n' "$server" "$file"; return 0; }
 
   url="$(printf '%s' "$entry" | jq -r '.url // ""')"
   helper="$(printf '%s' "$entry" | jq -r '.headersHelper // ""')"
   ref="$(printf '%s' "$url" | sed -n 's/.*project_ref=\([^&]*\).*/\1/p')"
-  case "$url" in *read_only=true*) readonly="true";; *) readonly="false";; esac
+  case "$url" in *read_only=true*) ro="true";; *) ro="false";; esac
   account="$(printf '%s' "$helper" | sed -n 's/.*--account[ =]\([^ ]*\).*/\1/p')"
 
   local token_present="false"; kc_has "$account" && token_present="true"
@@ -404,7 +552,7 @@ cmd_status() {
   if [ "$json" = "1" ]; then
     jq -n \
       --arg server "$server" --arg account "$account" --arg ref "$ref" \
-      --arg mode "$([ "$readonly" = "true" ] && echo read-only || echo read-write)" \
+      --arg mode "$([ "$ro" = "true" ] && echo read-only || echo read-write)" \
       --arg token "$token_present" --arg verified "$verified" \
       --arg pname "$pname" --arg oname "$oname" '
       {linked:true, server:$server, account:$account, project_ref:$ref,
@@ -415,7 +563,7 @@ cmd_status() {
     printf '  server        : %s\n' "$server"
     printf '  account       : %s\n' "$account"
     printf '  project_ref   : %s\n' "$ref"
-    printf '  mode          : %s\n' "$([ "$readonly" = "true" ] && echo read-only || echo read-write)"
+    printf '  mode          : %s\n' "$([ "$ro" = "true" ] && echo read-only || echo read-write)"
     printf '  token present : %s\n' "$token_present"
     case "$verified" in
       true)  printf '  verified      : YES  project "%s" (org "%s") belongs to account "%s"\n' "$pname" "$oname" "$account" ;;
@@ -424,6 +572,116 @@ cmd_status() {
       skipped) printf '  verified      : skipped\n' ;;
     esac
   fi
+}
+
+# A compact one-line summary of the current directory's binding, for use in a
+# Claude Code / shell status line. Prints nothing (exit 0) when not linked.
+cmd_statusline() {
+  command -v jq >/dev/null 2>&1 || exit 0
+  local server="$DEFAULT_SERVER"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --name) server="${2:-}"; shift 2 ;;
+      --name=*) server="${1#*=}"; shift ;;
+      *) shift ;;
+    esac
+  done
+  local file; file="$(mcp_file)"
+  [ -f "$file" ] || exit 0
+  jq -e . "$file" >/dev/null 2>&1 || exit 0
+  local entry; entry="$(mcp_entry "$file" "$server")"
+  [ -n "$entry" ] || exit 0
+  local url ref account mode
+  url="$(printf '%s' "$entry" | jq -r '.url // ""')"
+  ref="$(printf '%s' "$url" | sed -n 's/.*project_ref=\([^&]*\).*/\1/p')"
+  account="$(printf '%s' "$entry" | jq -r '.headersHelper // ""' | sed -n 's/.*--account[ =]\([^ ]*\).*/\1/p')"
+  case "$url" in *read_only=true*) mode="ro";; *) mode="rw";; esac
+  printf '%s: %s/%s (%s)\n' "$server" "$account" "$ref" "$mode"
+}
+
+cmd_list() {
+  local json=0 verify=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --json) json=1; shift ;;
+      --verify) verify=1; shift ;;
+      *) shift ;;
+    esac
+  done
+  ensure_links
+
+  # Prune links whose .mcp.json no longer defines that server.
+  local kept="[]" dir server account ref mode f v
+  while IFS=$'\t' read -r dir server account ref mode; do
+    [ -z "$dir" ] && continue
+    f="$dir/.mcp.json"
+    if [ -f "$f" ] && [ -n "$(mcp_entry "$f" "$server")" ]; then
+      v=""
+      if [ "$verify" = "1" ] && kc_has "$account"; then
+        local pj
+        if pj="$(projects_json "$account" 2>/dev/null)"; then
+          if printf '%s' "$pj" | jq -e --arg r "$ref" 'any(.ref==$r)' >/dev/null 2>&1; then v="true"; else v="false"; fi
+        else v="unreachable"; fi
+      fi
+      kept="$(jq -c --arg dir "$dir" --arg s "$server" --arg a "$account" --arg r "$ref" --arg m "$mode" --arg v "$v" \
+        '. + [{dir:$dir, server:$s, account:$a, project_ref:$r, mode:$m, verified:$v}]' <<<"$kept")"
+    fi
+  done < <(jq -r '.links[]? | [.dir, .server, .account, .project_ref, .mode] | @tsv' "$LINKS")
+
+  # Persist the pruned set (drop the transient verified field).
+  local tmp; tmp="$(mktemp)"
+  jq -n --argjson k "$kept" '{links: ($k | map(del(.verified)))}' > "$tmp" && mv "$tmp" "$LINKS"
+
+  if [ "$json" = "1" ]; then
+    jq -n --argjson k "$kept" '{links:$k}'
+  else
+    local n; n="$(printf '%s' "$kept" | jq 'length')"
+    if [ "$n" = "0" ]; then
+      printf 'No linked directories recorded.\n'
+    else
+      printf 'Linked directories:\n'
+      printf '%s' "$kept" | jq -r '.[] |
+        "  \(.dir)\n    -> \(.account)/\(.project_ref) (\(.mode)) [\(.server)]" +
+        (if .verified=="false" then "  !! WRONG ACCOUNT" elif .verified=="unreachable" then "  (unverified)" else "" end)'
+    fi
+  fi
+}
+
+cmd_export() {
+  ensure_links
+  jq -n \
+    --argjson accounts "$(jq -c '.accounts // []' "$REGISTRY")" \
+    --argjson links "$(jq -c '.links // []' "$LINKS")" \
+    '{accounts:$accounts, links:$links}'
+}
+
+cmd_import() {
+  local src="${1:-}" data
+  if [ -n "$src" ] && [ "$src" != "-" ]; then
+    [ -f "$src" ] || die "import: no such file: $src"
+    data="$(cat "$src")"
+  else
+    data="$(cat)"
+  fi
+  printf '%s' "$data" | jq -e . >/dev/null 2>&1 || die "import: input is not valid JSON"
+  ensure_links
+
+  local tmp
+  tmp="$(mktemp)"
+  jq --argjson add "$(printf '%s' "$data" | jq -c '.accounts // []')" \
+     '.accounts = ((.accounts // []) + $add | unique)' "$REGISTRY" > "$tmp" && mv "$tmp" "$REGISTRY"
+
+  tmp="$(mktemp)"
+  jq --argjson add "$(printf '%s' "$data" | jq -c '.links // []')" '
+    .links = (((.links // []) + $add)
+      | reduce .[] as $x ({}; .[($x.dir + "|" + $x.server)] = $x)
+      | to_entries | map(.value))
+  ' "$LINKS" > "$tmp" && mv "$tmp" "$LINKS"
+
+  local na; na="$(printf '%s' "$data" | jq '(.accounts // []) | length')"
+  printf 'Imported %s account name(s) and merged links.\n' "$na" >&2
+  printf 'Tokens are NOT imported. On this machine, add each token with:\n' >&2
+  printf '  supa-mcp account add <name>\n' >&2
 }
 
 cmd_install() {
@@ -438,44 +696,84 @@ cmd_install() {
     *) warn "note: $target_dir is not on your PATH. Add it to your shell profile:"
        warn "      export PATH=\"$target_dir:\$PATH\"" ;;
   esac
-  ensure_registry
+  ensure_links
   printf 'Ready. Add an account: supa-mcp account add <name>\n' >&2
 }
 
 cmd_doctor() {
   local ok=1
-  for d in jq curl security; do
+  printf '  version        : %s\n' "$VERSION"
+  printf '  keychain       : %s\n' "$(kc_backend)"
+  for d in jq curl; do
     if command -v "$d" >/dev/null 2>&1; then printf '  dep %-9s: found\n' "$d"
     else printf '  dep %-9s: MISSING\n' "$d"; ok=0; fi
   done
+  local kb; kb="$(kc_backend)"
+  case "$kb" in
+    security|secret-tool)
+      if command -v "$kb" >/dev/null 2>&1; then printf '  dep %-9s: found\n' "$kb"
+      else printf '  dep %-9s: MISSING\n' "$kb"; ok=0; fi ;;
+    *) printf '  dep keychain : UNSUPPORTED backend "%s"\n' "$kb"; ok=0 ;;
+  esac
   if command -v supa-mcp >/dev/null 2>&1; then printf '  on PATH        : yes (%s)\n' "$(command -v supa-mcp)"
   else printf '  on PATH        : no (run: supa-mcp install)\n'; ok=0; fi
-  ensure_registry
+
+  ensure_links
   local n; n="$(reg_accounts | grep -c . || true)"
   printf '  accounts       : %s registered\n' "$n"
+
+  # Token health: verify each stored token against the API.
+  local a
+  while IFS= read -r a; do
+    [ -z "$a" ] && continue
+    if kc_has "$a"; then
+      if api_get "$a" /v1/organizations >/dev/null 2>&1; then
+        printf '  account %-10s: token valid\n' "$a"
+      else
+        printf '  account %-10s: token INVALID or unreachable\n' "$a"; ok=0
+      fi
+    else
+      printf '  account %-10s: NO token in keychain\n' "$a"; ok=0
+    fi
+  done < <(reg_accounts)
+
   if [ -f "$(mcp_file)" ]; then printf '  this directory : has .mcp.json\n'
   else printf '  this directory : not linked\n'; fi
-  [ "$ok" = "1" ] && printf 'doctor: OK\n' || { printf 'doctor: issues found\n'; return 1; }
+  if [ "$ok" = "1" ]; then
+    printf 'doctor: OK\n'
+  else
+    printf 'doctor: issues found\n'; return 1
+  fi
 }
+
+cmd_version() { printf 'supa-mcp %s\n' "$VERSION"; }
 
 usage() {
   cat <<'EOF'
-supa-mcp - per-project Supabase MCP switcher (macOS)
+supa-mcp - per-project Supabase MCP switcher (macOS + Linux)
 
   supa-mcp install                         put supa-mcp on PATH (~/.local/bin)
-  supa-mcp doctor                          check deps and current-dir status
-  supa-mcp account add <name> [--token X]  store a PAT in the Keychain
+  supa-mcp doctor                          check deps, backend, and token health
+  supa-mcp version                         print the version
+  supa-mcp account add <name> [--token X]  store a PAT in the keychain
   supa-mcp account list [--json]           list registered accounts
   supa-mcp account remove <name>           delete an account + its token
   supa-mcp whoami <account> [--json]       show the orgs/projects a token sees
   supa-mcp projects <account> [--json]     list an account's projects
+  supa-mcp branches <account> <ref> [--json]  list a project's branches
   supa-mcp link --account <n> --project-ref <ref> [--write] [--name <server>]
                                            write ./.mcp.json for this project
+  supa-mcp switch [--account <n>] [--project-ref <ref>] [--write]
+                                           re-point this directory's binding
   supa-mcp status [--json] [--no-verify]   show + verify this dir's binding
+  supa-mcp statusline [--name <server>]    one-line binding summary (for prompts)
+  supa-mcp list [--json] [--verify]        every linked directory on this machine
   supa-mcp unlink [--name <server>]        remove the server from ./.mcp.json
+  supa-mcp export                          dump accounts + links (no secrets)
+  supa-mcp import [file]                   merge accounts + links from a bundle
   supa-mcp headers --account <name>        (internal) headersHelper hot path
 
-Tokens live only in the macOS Keychain (service "supa-mcp"). .mcp.json holds no
+Tokens live only in the OS keychain (service "supa-mcp"). .mcp.json holds no
 secret: just the project_ref and a headersHelper command.
 EOF
 }
@@ -487,15 +785,22 @@ EOF
 main() {
   local cmd="${1:-}"; shift || true
   case "$cmd" in
-    headers)  cmd_headers "$@" ;;               # hot path: no dep preamble noise
-    account)  require_deps; cmd_account "$@" ;;
-    whoami)   require_deps; cmd_whoami "$@" ;;
-    projects) require_deps; cmd_projects "$@" ;;
-    link)     require_deps; cmd_link "$@" ;;
-    unlink)   require_deps; cmd_unlink "$@" ;;
-    status)   require_deps; cmd_status "$@" ;;
-    install)  cmd_install "$@" ;;
-    doctor)   cmd_doctor "$@" ;;
+    headers)   cmd_headers "$@" ;;               # hot path: no dep preamble noise
+    account)   require_deps; cmd_account "$@" ;;
+    whoami)    require_deps; cmd_whoami "$@" ;;
+    projects)  require_deps; cmd_projects "$@" ;;
+    branches)  require_deps; cmd_branches "$@" ;;
+    link)      require_deps; cmd_link "$@" ;;
+    switch)    require_deps; cmd_switch "$@" ;;
+    unlink)    require_deps; cmd_unlink "$@" ;;
+    status)    require_deps; cmd_status "$@" ;;
+    statusline) cmd_statusline "$@" ;;           # best-effort, needs only jq
+    list)      require_deps; cmd_list "$@" ;;
+    export)    require_deps; cmd_export "$@" ;;
+    import)    require_deps; cmd_import "$@" ;;
+    install)   cmd_install "$@" ;;
+    doctor)    cmd_doctor "$@" ;;
+    version|--version|-v) cmd_version ;;
     ""|-h|--help|help) usage ;;
     *) die "unknown command: $cmd (try: supa-mcp --help)" ;;
   esac

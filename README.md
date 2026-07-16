@@ -83,8 +83,13 @@ A generated `.mcp.json` looks like this. It holds no secret, so it is safe to co
 
 ## Requirements
 
-macOS, plus `jq`, `curl`, and `security` (the last two ship with macOS; install `jq` with
-`brew install jq`).
+- **macOS** — `jq`, `curl`, and `security`. `curl` and `security` ship with macOS; install
+  `jq` with `brew install jq`.
+- **Linux** — `jq`, `curl`, and `secret-tool` (libsecret). On Debian/Ubuntu:
+  `sudo apt-get install -y jq libsecret-tools`.
+
+The keychain backend is chosen automatically per OS; override it with
+`SUPA_MCP_KEYCHAIN=security|secret-tool` if needed.
 
 ## Install
 
@@ -106,6 +111,15 @@ supa-mcp install
 
 To pick up later changes, run `/plugin marketplace update supa-mcp` inside Claude Code.
 
+### As a CLI via Homebrew
+
+```
+brew install im-shubhamsharma/tap/supa-mcp
+```
+
+This is the CLI only (no slash commands). Install the Claude Code plugin as above if you want
+the `/supa-*` commands too.
+
 ### As a plain CLI from a clone
 
 ```
@@ -118,8 +132,8 @@ Either way, make sure `~/.local/bin` is on your PATH (add
 `export PATH="$HOME/.local/bin:$PATH"` to your `~/.zshrc` if needed). Run
 `supa-mcp doctor` to check.
 
-Tokens never travel with the repo: they live only in each machine's macOS Keychain, so on a
-new machine you register that machine's own accounts with `supa-mcp account add <name>`.
+Tokens never travel with the repo: they live only in each machine's keychain, so on a new
+machine you register that machine's own accounts with `supa-mcp account add <name>`.
 
 ## Quick start
 
@@ -144,7 +158,7 @@ supa-mcp link --account company --project-ref abcd1234
 ```
 
 Inside Claude Code you can drive the same steps with `/supa-add`, `/supa-link`,
-`/supa-status`, `/supa-list`, and `/supa-unlink`.
+`/supa-switch`, `/supa-status`, `/supa-list`, `/supa-branches`, and `/supa-unlink`.
 
 ## Commands
 
@@ -155,10 +169,16 @@ Inside Claude Code you can drive the same steps with `/supa-add`, `/supa-link`,
 | `supa-mcp account remove <name>` | Delete an account and its token. |
 | `supa-mcp whoami <account> [--json]` | Show the orgs and projects a token can see. |
 | `supa-mcp projects <account> [--json]` | List an account's projects. |
+| `supa-mcp branches <account> <ref> [--json]` | List a project's Supabase branches. |
 | `supa-mcp link --account <n> --project-ref <ref> [--write] [--name <server>]` | Write `./.mcp.json`. |
+| `supa-mcp switch [--account <n>] [--project-ref <ref>] [--write]` | Re-point this directory's binding. |
 | `supa-mcp status [--json] [--no-verify]` | Show and verify this directory's binding. |
+| `supa-mcp statusline [--name <server>]` | One-line binding summary (for status lines). |
+| `supa-mcp list [--json] [--verify]` | Every linked directory on this machine. |
 | `supa-mcp unlink [--name <server>]` | Remove the server from `./.mcp.json`. |
-| `supa-mcp doctor` | Check dependencies and current-directory status. |
+| `supa-mcp export` / `supa-mcp import [file]` | Move accounts + links between machines (no secrets). |
+| `supa-mcp doctor` | Check deps, keychain backend, and token health. |
+| `supa-mcp version` | Print the version. |
 | `supa-mcp install [dir]` | Put `supa-mcp` on PATH. |
 
 ## The wrong-account guard
@@ -168,6 +188,58 @@ Inside Claude Code you can drive the same steps with `/supa-add`, `/supa-link`,
 `account_verified: false` so you catch a mislinked directory before you run anything
 against it.
 
+When the plugin is installed, a **SessionStart hook** also runs on every session start and
+resume. It is local-only and fast: in a linked directory it prints which account and project
+are pinned and reminds you to run `/supa-status`; in an unlinked directory it stays silent.
+
+## Working across many projects
+
+- `supa-mcp list` shows every directory you have linked on this machine, with its account,
+  project, and mode. It prunes entries whose `.mcp.json` has since been removed; add
+  `--verify` to live-check each one against its account.
+- `supa-mcp switch --project-ref <ref>` re-points the current directory to another project
+  without retyping the account. Add `--account <name>` to move it to a different account, or
+  `--write` / `--read-only` to change the mode.
+
+## Supabase branches
+
+`supa-mcp branches <account> <project-ref>` lists a project's branches. A Supabase branch has
+its own project ref, so to point a directory at a branch database, link or switch to that
+branch's ref:
+
+```
+supa-mcp switch --project-ref <branch-ref>
+```
+
+## Status line
+
+`supa-mcp statusline` prints a compact one-line summary of the current directory's binding
+(`supabase: company/abcd1234 (ro)`), or nothing when the directory is not linked. Wire it
+into your Claude Code status line by adding this to `~/.claude/settings.json`:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "supa-mcp statusline"
+  }
+}
+```
+
+## Moving to another machine
+
+`.mcp.json` is safe to commit, so teammates who clone a repo already get the binding. To move
+your whole setup to another machine, export the (non-secret) account and link registry and
+import it on the other side:
+
+```
+supa-mcp export > supa-mcp-bundle.json      # on machine A
+supa-mcp import supa-mcp-bundle.json         # on machine B
+```
+
+Tokens are **not** exported. On the new machine, add each token once with
+`supa-mcp account add <name>` — they go into that machine's own keychain.
+
 ## Troubleshooting
 
 Run `supa-mcp doctor` first — it checks dependencies, PATH, and the current directory in
@@ -176,7 +248,8 @@ one shot.
 | Symptom | Fix |
 | --- | --- |
 | `supa-mcp: command not found` | `~/.local/bin` is not on your PATH. Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc`, then open a new terminal. |
-| `missing dependency: jq` | `brew install jq`. `curl` and `security` already ship with macOS. |
+| `missing dependency: jq` | macOS: `brew install jq`. Linux: `sudo apt-get install -y jq`. |
+| `unsupported keychain backend` | Linux needs `secret-tool` (`sudo apt-get install -y libsecret-tools`), or set `SUPA_MCP_KEYCHAIN`. |
 | The Supabase MCP does not appear in Claude Code | You must start a **fresh** Claude Code session in the linked directory. Accept the workspace-trust prompt. Check the binding with `supa-mcp status`. |
 | A macOS Keychain prompt keeps appearing | Choose **Always Allow** on the `supa-mcp` prompt so it stays silent afterward. |
 | `status` shows `account_verified: false` | The pinned project does not belong to the linked account (wrong account). Re-link with the correct `--account`. See [the wrong-account guard](#the-wrong-account-guard). |
@@ -202,8 +275,8 @@ Code.
 
 ## Limitations
 
-- macOS only for now. Linux and Windows are a planned follow-up (swap `security` for
-  `secret-tool` or Credential Manager).
+- macOS and Linux are supported. Windows is a planned follow-up (a Credential Manager
+  backend plugged into the existing `kc_*` keychain abstraction); use WSL in the meantime.
 - One connection per directory by default. You can add more with `--name` (for example a
   separate staging project in the same repo).
 

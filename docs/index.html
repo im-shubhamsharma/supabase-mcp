@@ -36,8 +36,10 @@
     --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji", sans-serif;
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   }
+  /* Light palette: applied when the system prefers light (unless the user
+     forced dark) OR when the user explicitly toggles light. */
   @media (prefers-color-scheme: light){
-    :root{
+    :root:not([data-theme="dark"]){
       --bg:#f6faf7;
       --bg-2:#eef4f0;
       --panel:#ffffff;
@@ -51,6 +53,20 @@
       --brand-2:#178a5a;
       --brand-glow:rgba(26,156,102,.22);
     }
+  }
+  :root[data-theme="light"]{
+    --bg:#f6faf7;
+    --bg-2:#eef4f0;
+    --panel:#ffffff;
+    --panel-2:#f2f7f4;
+    --border:rgba(12,30,22,.10);
+    --border-strong:rgba(12,30,22,.16);
+    --text:#0d1a14;
+    --muted:#41564b;
+    --faint:#6a7d72;
+    --brand:#1a9c66;
+    --brand-2:#178a5a;
+    --brand-glow:rgba(26,156,102,.22);
   }
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
@@ -200,6 +216,50 @@
   .foot-inner a{color:var(--muted);transition:.2s}
   .foot-inner a:hover{color:var(--brand)}
 
+  /* theme toggle */
+  .theme-toggle{display:inline-grid;place-items:center;width:38px;height:38px;border-radius:999px;
+    border:1px solid var(--border-strong);background:var(--panel);color:var(--text);cursor:pointer;
+    font-size:16px;line-height:1;transition:.2s;padding:0}
+  .theme-toggle:hover{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-glow)}
+  .theme-toggle .sun{display:none}.theme-toggle .moon{display:block}
+  :root[data-theme="light"] .theme-toggle .sun{display:block}
+  :root[data-theme="light"] .theme-toggle .moon{display:none}
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]) .theme-toggle .sun{display:block}
+    :root:not([data-theme="dark"]) .theme-toggle .moon{display:none}
+  }
+
+  /* animated terminal */
+  .terminal{max-width:640px;margin:40px auto 0;border:1px solid var(--border-strong);border-radius:14px;
+    background:#07100c;overflow:hidden;box-shadow:0 30px 70px -30px rgba(0,0,0,.7);text-align:left}
+  @media (prefers-color-scheme: light){:root:not([data-theme="dark"]) .terminal{background:#0d1a14;border-color:rgba(12,30,22,.2)}}
+  .term-bar{display:flex;align-items:center;gap:7px;padding:11px 14px;background:rgba(255,255,255,.04);
+    border-bottom:1px solid rgba(255,255,255,.06)}
+  .term-bar .d{width:11px;height:11px;border-radius:50%}
+  .term-bar .r{background:#ff5f57}.term-bar .y{background:#febc2e}.term-bar .g{background:#28c840}
+  .term-bar .t{margin-left:8px;font:600 12px/1 var(--mono);color:#7d938a}
+  .term-body{padding:16px 18px;min-height:210px;font:13.5px/1.7 var(--mono);color:#d7e7de;white-space:pre-wrap}
+  .term-body .p{color:var(--brand)}
+  .term-body .o{color:#9db0a5}
+  .term-body .ok{color:#7ef0bb}
+  .cursor{display:inline-block;width:8px;height:1.05em;background:var(--brand);vertical-align:text-bottom;
+    animation:blink 1.05s steps(1) infinite;margin-left:1px}
+
+  /* comparison table */
+  .cmp{margin-top:36px;border:1px solid var(--border);border-radius:var(--radius);overflow:auto}
+  .cmp table{border-collapse:collapse;width:100%;min-width:560px}
+  .cmp th,.cmp td{padding:15px 20px;border-bottom:1px solid var(--border);font-size:14.5px;vertical-align:top}
+  .cmp thead th{font-size:13px;letter-spacing:.03em}
+  .cmp thead th:nth-child(2){color:var(--faint)}
+  .cmp thead th:nth-child(3){color:var(--brand)}
+  .cmp td:first-child{color:var(--muted);font-weight:600;width:34%}
+  .cmp td.no::before{content:"✕ ";color:#ff6b6b}
+  .cmp td.yes::before{content:"✓ ";color:var(--brand)}
+  .cmp tr:last-child td{border-bottom:none}
+  .cmp col.hl{background:color-mix(in srgb,var(--brand) 7%,transparent)}
+
+  @keyframes blink{50%{opacity:0}}
+
   /* reveal animation */
   .reveal{opacity:0;transform:translateY(22px);transition:opacity .7s ease,transform .7s ease}
   .reveal.in{opacity:1;transform:none}
@@ -213,6 +273,12 @@
     html{scroll-behavior:auto}
   }
 </style>
+<script>
+  // Apply the saved theme before paint to avoid a flash.
+  (function(){
+    try{ var t = localStorage.getItem('supa-theme'); if(t){ document.documentElement.setAttribute('data-theme', t); } }catch(e){}
+  })();
+</script>
 </head>
 <body>
 
@@ -223,6 +289,9 @@
       <a href="#how">How it works</a>
       <a href="#install">Install</a>
       <a href="#commands">Commands</a>
+      <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle light and dark theme" title="Toggle theme">
+        <span class="moon" aria-hidden="true">🌙</span><span class="sun" aria-hidden="true">☀️</span>
+      </button>
       <a class="gh" href="https://github.com/im-shubhamsharma/supabase-mcp" target="_blank" rel="noopener">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
         GitHub
@@ -235,14 +304,19 @@
 <section class="hero">
   <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
   <div class="wrap">
-    <span class="pill"><span class="tick">✓</span> macOS · Claude Code plugin · MIT open source</span>
+    <span class="pill"><span class="tick">✓</span> macOS &amp; Linux · Claude Code plugin · MIT open source</span>
     <h1>The right Supabase project,<br><span class="grad">in every directory.</span></h1>
-    <p class="sub">Open Claude Code in a project folder and its Supabase MCP connects to exactly that project — on the correct account, read-only by default. No more logging out to switch. Tokens stay encrypted in the macOS Keychain and never touch disk.</p>
+    <p class="sub">Open Claude Code in a project folder and its Supabase MCP connects to exactly that project — on the correct account, read-only by default. No more logging out to switch. Tokens stay encrypted in your OS keychain and never touch disk.</p>
     <div class="cta">
       <a class="btn primary" href="#install">Get started</a>
       <a class="btn ghost" href="https://github.com/im-shubhamsharma/supabase-mcp" target="_blank" rel="noopener">View on GitHub →</a>
     </div>
     <p class="hero-note">Free &amp; open source · An unofficial community project, not affiliated with Supabase or Anthropic</p>
+
+    <div class="terminal reveal" aria-hidden="true">
+      <div class="term-bar"><span class="d r"></span><span class="d y"></span><span class="d g"></span><span class="t">supa-mcp — zsh</span></div>
+      <div class="term-body" id="term"></div>
+    </div>
   </div>
 </section>
 
@@ -290,12 +364,36 @@
   </div>
 </section>
 
+<!-- COMPARISON -->
+<section id="compare">
+  <div class="wrap">
+    <span class="eyebrow reveal">Why supa-mcp</span>
+    <h2 class="reveal">Versus the default Supabase MCP</h2>
+    <div class="cmp reveal">
+      <table>
+        <colgroup><col><col><col class="hl"></colgroup>
+        <thead>
+          <tr><th></th><th>Default Supabase MCP</th><th>supa-mcp</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Accounts at once</td><td class="no">One org via OAuth</td><td class="yes">Every account &amp; org, side by side</td></tr>
+          <tr><td>Switching projects</td><td class="no">Log out, log back in</td><td class="yes">Automatic — pinned per directory</td></tr>
+          <tr><td>Wrong-account risk</td><td class="no">A session can point at the wrong DB</td><td class="yes">Live guard flags a mislinked directory</td></tr>
+          <tr><td>Token storage</td><td class="no">OAuth session</td><td class="yes">OS keychain, never on disk</td></tr>
+          <tr><td>Default access</td><td class="no">Read-write</td><td class="yes">Read-only unless you opt in</td></tr>
+          <tr><td>Config in the repo</td><td class="no">—</td><td class="yes"><code>.mcp.json</code> holds no secret, safe to commit</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
 <!-- INSTALL / QUICK START -->
 <section id="install">
   <div class="wrap">
     <span class="eyebrow reveal">Get started</span>
     <h2 class="reveal">Up and running in four steps</h2>
-    <p class="lead reveal">Requires macOS with <code>jq</code> (<code>brew install jq</code>); <code>curl</code> and <code>security</code> ship with macOS.</p>
+    <p class="lead reveal">Requires <code>jq</code> and <code>curl</code>, plus the OS keychain — <code>security</code> on macOS (built in) or <code>secret-tool</code> (libsecret) on Linux. Install <code>jq</code> with <code>brew install jq</code> or <code>apt install jq</code>.</p>
 
     <div class="steps">
       <div class="step reveal">
@@ -444,6 +542,75 @@ supa-mcp link --account <span class="arg">company</span> --project-ref <span cla
       });
     });
   });
+
+  // Theme toggle (persists choice; falls back to system preference)
+  (function(){
+    var btn = document.getElementById('themeToggle');
+    if(!btn) return;
+    btn.addEventListener('click', function(){
+      var root = document.documentElement;
+      var current = root.getAttribute('data-theme');
+      if(!current){
+        current = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      var next = current === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      try{ localStorage.setItem('supa-theme', next); }catch(e){}
+    });
+  })();
+
+  // Animated terminal typewriter
+  (function(){
+    var el = document.getElementById('term');
+    if(!el) return;
+    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // Each line: [cssClass, text]. 'p' = prompt/command, 'o' = output, 'ok' = success.
+    var script = [
+      ['p', '$ supa-mcp link --account company --project-ref abcd1234'],
+      ['o', 'Linked "supabase" → account "company", project abcd1234 (read-only).'],
+      ['o', 'Wrote ./.mcp.json'],
+      ['', ''],
+      ['p', '$ supa-mcp status'],
+      ['o', '  account       : company'],
+      ['o', '  project_ref   : abcd1234'],
+      ['ok','  verified      : YES  "company-app" belongs to "company"']
+    ];
+
+    function render(lines, withCursor){
+      var html = lines.map(function(l){
+        return '<span class="'+l[0]+'">'+escapeHtml(l[1])+'</span>';
+      }).join('\n');
+      el.innerHTML = html + (withCursor ? '<span class="cursor"></span>' : '');
+    }
+    function escapeHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    if(reduce){ render(script, false); return; }
+
+    var li = 0, done = [];
+    function typeLine(){
+      if(li >= script.length){ setTimeout(reset, 2600); return; }
+      var cls = script[li][0], full = script[li][1], ci = 0;
+      var isCmd = cls === 'p';
+      if(full === ''){ done.push([cls, '']); li++; render(done, true); setTimeout(typeLine, 220); return; }
+      function step(){
+        var shown = done.concat([[cls, full.slice(0, ci)]]);
+        render(shown, true);
+        ci++;
+        if(ci <= full.length){ setTimeout(step, isCmd ? 34 : 9); }
+        else { done.push([cls, full]); li++; setTimeout(typeLine, isCmd ? 420 : 120); }
+      }
+      step();
+    }
+    function reset(){ li = 0; done = []; typeLine(); }
+
+    if('IntersectionObserver' in window){
+      var started = false;
+      var io = new IntersectionObserver(function(en){
+        if(en[0].isIntersecting && !started){ started = true; typeLine(); io.disconnect(); }
+      }, {threshold:.3});
+      io.observe(el);
+    } else { typeLine(); }
+  })();
 </script>
 </body>
 </html>

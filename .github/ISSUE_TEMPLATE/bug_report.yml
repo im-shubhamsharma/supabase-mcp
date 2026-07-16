@@ -1,0 +1,39 @@
+name: Bug report
+description: Something isn't working
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! **Never paste real tokens, project refs, org names, or account names.** Redact them.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: Redact any real project refs / account names.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `supa-mcp doctor`
+      description: Paste the output (it contains no secrets). Redact account names if you prefer.
+      render: text
+    validations:
+      required: false
+  - type: input
+    id: os
+    attributes:
+      label: OS and version
+      placeholder: "macOS 15.5 / Ubuntu 24.04"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: supa-mcp version
+      description: Output of `supa-mcp --version`
+      placeholder: "0.2.0"
+    validations:
+      required: true

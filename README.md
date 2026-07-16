@@ -57,20 +57,38 @@ macOS, plus `jq`, `curl`, and `security` (the last two ship with macOS; install 
 
 ## Install
 
-As a Claude Code plugin, add this repository as a marketplace and install the plugin, then
-put the CLI on your PATH:
+### As a Claude Code plugin (recommended)
+
+Add this repository as a marketplace and install the plugin from inside Claude Code. This
+also wires up the `/supa-*` slash commands and the skill:
+
+```
+/plugin marketplace add im-shubhamsharma/supabase-mcp
+/plugin install supa-mcp@supa-mcp
+```
+
+Then put the CLI on your PATH (once per machine):
 
 ```
 supa-mcp install
 ```
 
-Or as a plain CLI from a clone:
+To pick up later changes, run `/plugin marketplace update supa-mcp` inside Claude Code.
+
+### As a plain CLI from a clone
 
 ```
+git clone https://github.com/im-shubhamsharma/supabase-mcp.git
+cd supabase-mcp
 ./install.sh          # symlinks supa-mcp into ~/.local/bin
 ```
 
-Make sure `~/.local/bin` is on your PATH. Run `supa-mcp doctor` to check.
+Either way, make sure `~/.local/bin` is on your PATH (add
+`export PATH="$HOME/.local/bin:$PATH"` to your `~/.zshrc` if needed). Run
+`supa-mcp doctor` to check.
+
+Tokens never travel with the repo: they live only in each machine's macOS Keychain, so on a
+new machine you register that machine's own accounts with `supa-mcp account add <name>`.
 
 ## Quick start
 

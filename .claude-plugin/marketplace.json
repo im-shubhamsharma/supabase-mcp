@@ -1,0 +1,13 @@
+{
+  "name": "supa-mcp",
+  "owner": {
+    "name": "Shubham Sharma"
+  },
+  "plugins": [
+    {
+      "name": "supa-mcp",
+      "source": "./",
+      "description": "Per-project Supabase MCP switcher with Keychain-stored tokens."
+    }
+  ]
+}

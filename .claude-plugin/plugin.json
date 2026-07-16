@@ -1,0 +1,9 @@
+{
+  "name": "supa-mcp",
+  "description": "Per-project Supabase MCP switcher for Claude Code. Pin each project directory to the right Supabase account and project; tokens stay encrypted in the macOS Keychain and never touch disk.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Shubham Sharma"
+  },
+  "license": "MIT"
+}

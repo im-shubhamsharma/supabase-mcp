@@ -1,0 +1,3 @@
+# supa-mcp keeps no secrets in-repo; these are just local cruft guards
+.DS_Store
+*.log

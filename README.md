@@ -1,5 +1,13 @@
 # supa-mcp
 
+<p align="center">
+  <a href="https://im-shubhamsharma.github.io/supabase-mcp/">
+    <img src="docs/og.png" alt="supa-mcp — the right Supabase project, in every directory" width="720" />
+  </a>
+</p>
+
+<p align="center"><b><a href="https://im-shubhamsharma.github.io/supabase-mcp/">🌐 Website &amp; docs</a></b></p>
+
 ![platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey)
 ![license: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A2BE2)

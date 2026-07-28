@@ -381,7 +381,7 @@
           <tr><td>Wrong-account risk</td><td class="no">A session can point at the wrong DB</td><td class="yes">Live guard flags a mislinked directory</td></tr>
           <tr><td>Token storage</td><td class="no">OAuth session</td><td class="yes">OS keychain, never on disk</td></tr>
           <tr><td>Default access</td><td class="no">Read-write</td><td class="yes">Read-only unless you opt in</td></tr>
-          <tr><td>Config in the repo</td><td class="no">—</td><td class="yes"><code>.mcp.json</code> holds no secret, safe to commit</td></tr>
+          <tr><td>Config in the repo</td><td style="color:var(--faint)">—</td><td class="yes"><code>.mcp.json</code> holds no secret, safe to commit</td></tr>
         </tbody>
       </table>
     </div>
@@ -444,7 +444,7 @@ supa-mcp link --account <span class="arg">company</span> --project-ref <span cla
         <div class="num">4</div>
         <div class="body">
           <h3>Open Claude Code there</h3>
-          <p>Start a fresh session in that directory. Accept the workspace-trust prompt and the one-time Keychain prompt (choose <b>Always Allow</b>). The Supabase MCP is now connected to that exact project. Inside Claude Code, drive everything with <code>/supa-add</code>, <code>/supa-link</code>, <code>/supa-status</code>, <code>/supa-list</code>, and <code>/supa-unlink</code>.</p>
+          <p>Start a fresh session in that directory. Accept the workspace-trust prompt and the one-time Keychain prompt (choose <b>Always Allow</b>). The Supabase MCP is now connected to that exact project. Inside Claude Code, drive everything with <code>/supa-add</code>, <code>/supa-link</code>, <code>/supa-switch</code>, <code>/supa-status</code>, <code>/supa-list</code>, <code>/supa-branches</code>, and <code>/supa-unlink</code>.</p>
         </div>
       </div>
     </div>
@@ -482,7 +482,7 @@ supa-mcp link --account <span class="arg">company</span> --project-ref <span cla
     <span class="eyebrow reveal">Security</span>
     <h2 class="reveal">Built so a token never leaks</h2>
     <div class="sec">
-      <div class="item reveal"><span class="k">🔐</span><div><b>Keychain only</b><span>Tokens live in the macOS login Keychain (service <code>supa-mcp</code>), encrypted at rest and viewable in Keychain Access.app.</span></div></div>
+      <div class="item reveal"><span class="k">🔐</span><div><b>Keychain only</b><span>Tokens live in the OS keychain (macOS Keychain or Linux libsecret, service <code>supa-mcp</code>), encrypted at rest.</span></div></div>
       <div class="item reveal"><span class="k">📄</span><div><b>Safe to commit</b><span><code>.mcp.json</code> holds only a <code>project_ref</code> and a helper command — no secret. The registry, env, and git never hold a token.</span></div></div>
       <div class="item reveal"><span class="k">👁️</span><div><b>Read-only by default</b><span>New links pin <code>read_only=true</code>. Writes require an explicit <code>--write</code> at link time.</span></div></div>
       <div class="item reveal"><span class="k">🛡️</span><div><b>Wrong-account guard</b><span><code>supa-mcp status</code> checks live that the pinned project really belongs to the linked account, so you catch a mislinked directory before running anything.</span></div></div>

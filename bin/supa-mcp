@@ -337,11 +337,13 @@ link_write() { # account ref server ro json [project_name]
 
   [ -n "$pname" ] || pname="$(project_name_lookup "$account" "$ref")"
 
+  local existing_raw
+  existing_raw="$(cat "$file" 2>/dev/null || printf '{}')"
   tmp="$(mktemp)"
   jq -n \
-     --slurpfile existing <(cat "$file" 2>/dev/null || printf '{}') \
+     --arg existing_raw "$existing_raw" \
      --arg key "$server" --arg url "$url" --arg helper "$helper" '
-       ($existing[0] // {}) as $base
+       ($existing_raw | fromjson) as $base
        | $base
        | .mcpServers = ((.mcpServers // {}) + {
            ($key): {type:"http", url:$url, headersHelper:$helper}

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Test stub for macOS/xdg `open`. Never actually opens a browser; just echoes
+# the URL so tests can assert on it deterministically on any OS/CI runner.
+printf '%s\n' "${1:-}"

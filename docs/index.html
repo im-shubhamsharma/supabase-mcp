@@ -433,10 +433,12 @@ supa-mcp account add <span class="arg">company</span></pre>
 <pre><span class="cmt"># list the orgs & projects this account can see</span>
 supa-mcp whoami <span class="arg">company</span>
 
-<span class="cmt"># in your project folder, pin it</span>
+<span class="cmt"># in your project folder, pin it — by ref, or by name</span>
 cd ~/work/company-app
-supa-mcp link --account <span class="arg">company</span> --project-ref <span class="arg">abcd1234</span></pre>
+supa-mcp link --account <span class="arg">company</span> --project-ref <span class="arg">abcd1234</span>
+supa-mcp link --account <span class="arg">company</span> --project <span class="arg">company-app</span></pre>
           </div>
+          <p style="margin-top:.75rem">Or skip steps 2–3 entirely with <code>supa-mcp init</code> — it prompts for an account (if you don't have one) and links the directory in one pass.</p>
         </div>
       </div>
 
@@ -444,7 +446,7 @@ supa-mcp link --account <span class="arg">company</span> --project-ref <span cla
         <div class="num">4</div>
         <div class="body">
           <h3>Open Claude Code there</h3>
-          <p>Start a fresh session in that directory. Accept the workspace-trust prompt and the one-time Keychain prompt (choose <b>Always Allow</b>). The Supabase MCP is now connected to that exact project. Inside Claude Code, drive everything with <code>/supa-add</code>, <code>/supa-link</code>, <code>/supa-switch</code>, <code>/supa-status</code>, <code>/supa-list</code>, <code>/supa-branches</code>, and <code>/supa-unlink</code>.</p>
+          <p>Start a fresh session in that directory. Accept the workspace-trust prompt and the one-time Keychain prompt (choose <b>Always Allow</b>). The Supabase MCP is now connected to that exact project. Inside Claude Code, drive everything with <code>/supa-init</code>, <code>/supa-add</code>, <code>/supa-link</code>, <code>/supa-switch</code>, <code>/supa-status</code>, <code>/supa-list</code>, <code>/supa-branches</code>, <code>/supa-open</code>, and <code>/supa-unlink</code>.</p>
         </div>
       </div>
     </div>
@@ -456,20 +458,26 @@ supa-mcp link --account <span class="arg">company</span> --project-ref <span cla
   <div class="wrap">
     <span class="eyebrow reveal">Reference</span>
     <h2 class="reveal">Commands</h2>
-    <p class="lead reveal">The CLI is <code>supa-mcp</code>. Run <code>supa-mcp doctor</code> anytime to check dependencies, PATH, and the current directory.</p>
+    <p class="lead reveal">The CLI is <code>supa-mcp</code>. Run <code>supa-mcp doctor</code> anytime to check dependencies, PATH, and the current directory. Project lists are cached ~5 minutes per account — pass <code>--refresh</code> for a live lookup.</p>
     <div class="tablewrap reveal">
       <table>
         <thead><tr><th>Command</th><th>Purpose</th></tr></thead>
         <tbody>
-          <tr><td><code>account add &lt;name&gt;</code></td><td>Store a Personal Access Token in the Keychain (hidden prompt).</td></tr>
+          <tr><td><code>init</code></td><td>Guided setup: add an account (if needed) and link this directory.</td></tr>
+          <tr><td><code>account add &lt;name&gt;</code></td><td>Store a Personal Access Token in the Keychain (hidden prompt, validated before storing).</td></tr>
           <tr><td><code>account list</code></td><td>List registered accounts and whether each token is present.</td></tr>
           <tr><td><code>account remove &lt;name&gt;</code></td><td>Delete an account and its token.</td></tr>
           <tr><td><code>whoami &lt;account&gt;</code></td><td>Show the orgs and projects a token can see.</td></tr>
           <tr><td><code>projects &lt;account&gt;</code></td><td>List an account's projects (name, ref, org).</td></tr>
-          <tr><td><code>link --account &lt;n&gt; --project-ref &lt;ref&gt;</code></td><td>Write <code>./.mcp.json</code> for this directory. <code>--write</code> to allow writes.</td></tr>
+          <tr><td><code>branches &lt;account&gt; &lt;ref&gt;</code></td><td>List a project's Supabase branches.</td></tr>
+          <tr><td><code>link --account &lt;n&gt; (--project-ref &lt;ref&gt; | --project &lt;name&gt;)</code></td><td>Write <code>./.mcp.json</code> for this directory. <code>--write</code> to allow writes.</td></tr>
+          <tr><td><code>switch (--project-ref &lt;ref&gt; | --project &lt;name&gt; | --branch &lt;name&gt;)</code></td><td>Re-point this directory's binding.</td></tr>
           <tr><td><code>status</code></td><td>Show and live-verify this directory's binding.</td></tr>
-          <tr><td><code>unlink</code></td><td>Remove the server from <code>./.mcp.json</code>.</td></tr>
-          <tr><td><code>doctor</code></td><td>Check dependencies and current-directory status.</td></tr>
+          <tr><td><code>list --verify</code></td><td>Every linked directory on this machine, live-checked.</td></tr>
+          <tr><td><code>open</code></td><td>Open this directory's project in the Supabase dashboard.</td></tr>
+          <tr><td><code>unlink</code></td><td>Remove the server from <code>./.mcp.json</code> (deletes the file once empty).</td></tr>
+          <tr><td><code>export</code> / <code>import</code></td><td>Move accounts + links between machines (no secrets).</td></tr>
+          <tr><td><code>doctor</code></td><td>Check dependencies, keychain backend, and token health.</td></tr>
         </tbody>
       </table>
     </div>
@@ -486,6 +494,7 @@ supa-mcp link --account <span class="arg">company</span> --project-ref <span cla
       <div class="item reveal"><span class="k">📄</span><div><b>Safe to commit</b><span><code>.mcp.json</code> holds only a <code>project_ref</code> and a helper command — no secret. The registry, env, and git never hold a token.</span></div></div>
       <div class="item reveal"><span class="k">👁️</span><div><b>Read-only by default</b><span>New links pin <code>read_only=true</code>. Writes require an explicit <code>--write</code> at link time.</span></div></div>
       <div class="item reveal"><span class="k">🛡️</span><div><b>Wrong-account guard</b><span><code>supa-mcp status</code> checks live that the pinned project really belongs to the linked account, so you catch a mislinked directory before running anything.</span></div></div>
+      <div class="item reveal"><span class="k">✅</span><div><b>Validated before it's stored</b><span><code>account add</code> checks a token against the Supabase API first — an invalid or expired token never lands in the Keychain unless you pass <code>--force</code>.</span></div></div>
     </div>
   </div>
 </section>
@@ -573,6 +582,7 @@ supa-mcp link --account <span class="arg">company</span> --project-ref <span cla
       ['p', '$ supa-mcp status'],
       ['o', '  account       : company'],
       ['o', '  project_ref   : abcd1234'],
+      ['o', '  project_name  : company-app'],
       ['ok','  verified      : YES  "company-app" belongs to "company"']
     ];
 

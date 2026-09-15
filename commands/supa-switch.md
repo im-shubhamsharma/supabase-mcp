@@ -18,9 +18,13 @@ Steps:
    If it reports `linked: false`, this directory is not linked yet — tell the user to run
    `/supa-link` instead and stop.
 2. Decide the target. `switch` keeps the current account unless you pass a new one, so:
-   - To move to another project on the **same** account, you only need a new `--project-ref`.
+   - To move to another project on the **same** account, you only need a new `--project-ref`
+     (or `--project <name>` if the user names it directly — it resolves the ref for you).
      List the account's projects with `supa-mcp projects <account> --json` and present a
      short numbered list (name, ref, org) to choose from.
+   - To move to a Supabase **branch** of the current project, use `--branch <name>` instead
+     of a ref (list branches first with `supa-mcp branches <account> <ref> --json` if the
+     user isn't sure of the name).
    - To move to a **different** account, pass `--account <name>` as well (and pick a project
      from that account).
 3. Access mode is preserved from the current binding. Only pass `--write` if the user

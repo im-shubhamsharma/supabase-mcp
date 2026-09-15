@@ -38,19 +38,24 @@ project can still be pointed at a personal account.
 
 | Command | Purpose |
 | --- | --- |
-| `supa-mcp account add <name>` | Store a PAT in the keychain (prompts, hidden input). |
+| `supa-mcp init` | Guided setup: add an account (if needed) and link this directory. |
+| `supa-mcp account add <name>` | Store a PAT in the keychain (prompts, hidden input). Validated against the API before storing. |
 | `supa-mcp account list [--json]` | List registered accounts. |
 | `supa-mcp whoami <account> [--json]` | Show the orgs and projects a token can see. |
 | `supa-mcp projects <account> [--json]` | List an account's projects (name, ref, org). |
 | `supa-mcp branches <account> <ref> [--json]` | List a project's Supabase branches. |
-| `supa-mcp link --account <n> --project-ref <ref> [--write]` | Write `./.mcp.json`. |
-| `supa-mcp switch [--account <n>] [--project-ref <ref>] [--write]` | Re-point this directory's binding. |
+| `supa-mcp link --account <n> (--project-ref <ref> \| --project <name>) [--write]` | Write `./.mcp.json`. |
+| `supa-mcp switch [--account <n>] [--project-ref <ref> \| --project <name>] [--branch <name>] [--write]` | Re-point this directory's binding. |
 | `supa-mcp status [--json]` | Show and verify this directory's binding. |
 | `supa-mcp list [--json] [--verify]` | Every linked directory on this machine. |
-| `supa-mcp unlink [--name <server>]` | Remove the server from `./.mcp.json`. |
+| `supa-mcp open` | Open this directory's project in the Supabase dashboard. |
+| `supa-mcp unlink [--name <server>]` | Remove the server from `./.mcp.json` (deletes the file once empty). |
 | `supa-mcp export` / `import [file]` | Move accounts + links between machines (no secrets). |
 | `supa-mcp headers --account <name>` | Internal hot path used by `headersHelper`. |
 | `supa-mcp doctor` / `supa-mcp install` | Check deps + token health / put `supa-mcp` on PATH. |
+
+Project lists are cached ~5 minutes per account (`whoami`/`projects`/`status`/`list
+--verify`); pass `--refresh` for a live lookup if a project was just created.
 
 ## How to drive it
 
@@ -62,7 +67,9 @@ project can still be pointed at a personal account.
 - After a `link` or `switch`, remind the user to start a fresh Claude Code session in that
   directory, and that the first connect shows a trust prompt plus a one-time keychain prompt.
 - To move a directory to a different project on the same account, use `supa-mcp switch
-  --project-ref <ref>`; only pass `--account` when moving to a different account.
+  --project-ref <ref>` (or `--project <name>` if you know the project's name); only pass
+  `--account` when moving to a different account. `--branch <name>` switches to a Supabase
+  branch of the currently linked project by name.
 - When a user is unsure whether a directory is on the right account, run `supa-mcp status`.
   An `account_verified` of `false` means the pinned project does not belong to the linked
   account (wrong account); recommend re-linking or `switch`.
@@ -72,5 +79,5 @@ Cross-platform: the keychain backend is `security` on macOS and `secret-tool` on
 chosen automatically. A SessionStart hook surfaces the current directory's binding on
 session start; `supa-mcp statusline` gives a one-line summary for status lines.
 
-The slash commands `/supa-add`, `/supa-link`, `/supa-switch`, `/supa-status`, `/supa-list`,
-`/supa-branches`, and `/supa-unlink` wrap these steps.
+The slash commands `/supa-init`, `/supa-add`, `/supa-link`, `/supa-switch`, `/supa-status`,
+`/supa-list`, `/supa-branches`, `/supa-open`, and `/supa-unlink` wrap these steps.

@@ -14,7 +14,9 @@ Steps:
    ask which account this project belongs to.
 3. List that account's projects: `supa-mcp projects <account> --json`. Present them as a
    short numbered list showing project name, organization, and ref. Ask the user to pick
-   the project for this directory.
+   the project for this directory. If the user already named the exact project, you can
+   skip straight to `supa-mcp link --account <account> --project <name> --json` and let it
+   resolve the ref for you (it fails clearly if the name is ambiguous or unknown).
 4. Access mode is read-only by default, which is the safe choice. Only add `--write` if
    the user explicitly asks to allow writes from this project.
 5. Write the config:

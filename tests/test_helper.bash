@@ -26,10 +26,15 @@ setup_supa() {
 }
 
 # Register an account directly with a known fixture token (bypasses the hidden
-# prompt). Fixture tokens are TOKEN_<account>; use BADTOKEN for an invalid one.
+# prompt). Fixture tokens are TOKEN_<account>; use BADTOKEN for an invalid one
+# (pass "--force" as a 3rd arg to store it despite failed validation).
 seed_account() {
-  local name="$1" token="${2:-TOKEN_$1}"
-  run "$SUPA" account add "$name" --token "$token"
+  local name="$1" token="${2:-TOKEN_$1}" extra="${3:-}"
+  if [ -n "$extra" ]; then
+    run "$SUPA" account add "$name" --token "$token" $extra
+  else
+    run "$SUPA" account add "$name" --token "$token"
+  fi
   [ "$status" -eq 0 ] || {
     echo "seed_account failed: $output" >&2
     return 1

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Test stub for `curl` against the Supabase Management API. Returns canned
-# fixtures keyed by the bearer token, and simulates `curl -f` failure (exit 22)
-# for a token containing "BAD". Never makes a network call.
+# Test stub for `curl` against the Supabase Management API, matching the real
+# invocation shape: `curl -sS --max-time N -w '\n%{http_code}' -H ... url`.
+# Prints "<body>\n<status>" like real curl does with that -w format, never
+# failing on HTTP error status (curl only fails on transport errors without
+# -f). Never makes a network call.
 set -u
 
 url=""; token=""
@@ -14,33 +16,35 @@ for a in "$@"; do
   prev="$a"
 done
 
-# Invalid / revoked token -> curl -fsS fails
-case "$token" in
-  *BAD*) echo "curl: (22) The requested URL returned error: 401" >&2; exit 22 ;;
-esac
-
 # Account is encoded in the fixture token, e.g. TOKEN_personal -> personal
 acct="${token#TOKEN_}"
 path="${url#*api.supabase.com}"
 path="${path%%\?*}"
 
-emit() { printf '%s\n' "$1"; }
+emit() { # body status
+  printf '%s\n%s' "$1" "$2"
+}
+
+# Invalid / revoked token -> 401, like a real rejected PAT.
+case "$token" in
+  *BAD*) emit '{"message":"Invalid API key"}' 401; exit 0 ;;
+esac
 
 case "$acct:$path" in
   personal:/v1/organizations)
-    emit '[{"id":"org_p","name":"Personal"}]' ;;
+    emit '[{"id":"org_p","name":"Personal"}]' 200 ;;
   personal:/v1/projects)
-    emit '[{"id":"refP1","name":"personal-app","organization_id":"org_p","region":"us-east-1"}]' ;;
+    emit '[{"id":"refP1","name":"personal-app","organization_id":"org_p","region":"us-east-1"}]' 200 ;;
 
   company:/v1/organizations)
-    emit '[{"id":"org_c","name":"Company Inc"}]' ;;
+    emit '[{"id":"org_c","name":"Company Inc"}]' 200 ;;
   company:/v1/projects)
-    emit '[{"id":"refC1","name":"company-app","organization_id":"org_c","region":"eu-west-1"},{"id":"refC2","name":"company-staging","organization_id":"org_c","region":"eu-west-1"}]' ;;
+    emit '[{"id":"refC1","name":"company-app","organization_id":"org_c","region":"eu-west-1"},{"id":"refC2","name":"company-staging","organization_id":"org_c","region":"eu-west-1"}]' 200 ;;
   company:/v1/projects/refC1/branches)
-    emit '[{"id":"brC1","name":"preview","project_ref":"refC1","is_default":false,"status":"ACTIVE_HEALTHY"},{"id":"brC1d","name":"main","project_ref":"refC1","is_default":true,"status":"ACTIVE_HEALTHY"}]' ;;
+    emit '[{"id":"brC1","name":"preview","project_ref":"refC1","is_default":false,"status":"ACTIVE_HEALTHY"},{"id":"brC1d","name":"main","project_ref":"refC1","is_default":true,"status":"ACTIVE_HEALTHY"}]' 200 ;;
 
-  *:/v1/organizations) emit '[]' ;;
-  *:/v1/projects) emit '[]' ;;
-  *:*/branches) emit '[]' ;;
-  *) echo "curl stub: unmapped $acct:$path" >&2; exit 7 ;;
+  *:/v1/organizations) emit '[]' 200 ;;
+  *:/v1/projects) emit '[]' 200 ;;
+  *:*/branches) emit '[]' 200 ;;
+  *) emit '{"message":"not found"}' 404 ;;
 esac

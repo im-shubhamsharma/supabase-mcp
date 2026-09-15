@@ -87,10 +87,24 @@ setup() { setup_supa; seed_account company; }
 }
 
 @test "doctor flags an invalid token" {
-  seed_account broken BADTOKEN
+  seed_account broken BADTOKEN --force
   run "$SUPA" doctor
   [[ "$output" == *"broken"* ]]
   [[ "$output" == *"invalid"* ]] || [[ "$output" == *"INVALID"* ]]
+}
+
+@test "account add rejects an invalid token without --force" {
+  run "$SUPA" account add broken --token BADTOKEN
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"rejected"* ]] || [[ "$output" == *"Not stored"* ]]
+  run "$SUPA" account list --json
+  echo "$output" | jq -e '.accounts | index("broken") | not' >/dev/null
+}
+
+@test "account add rejects an invalid account name" {
+  run "$SUPA" account add "bad name" --token TOKEN_x
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"invalid account name"* ]]
 }
 
 # ---- export / import (new) ----
@@ -131,4 +145,77 @@ setup() { setup_supa; seed_account company; }
   [ "$status" -eq 0 ]
   [[ "$output" == *"company"* ]]
   [[ "$output" == *"refC1"* ]]
+}
+
+@test "statusline includes the project name once known" {
+  "$SUPA" link --account company --project company-app --json
+  run "$SUPA" statusline
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"company-app"* ]]
+}
+
+# ---- name-based switch/branch resolution (new) ----
+
+@test "switch --project resolves a project by name on the same account" {
+  "$SUPA" link --account company --project-ref refC1 --json
+  run "$SUPA" switch --project company-staging --json
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.project_ref == "refC2"' >/dev/null
+}
+
+@test "switch --branch resolves a branch by name on the current project" {
+  "$SUPA" link --account company --project-ref refC1 --json
+  run "$SUPA" switch --branch preview --json
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.project_ref == "brC1"' >/dev/null
+}
+
+@test "switch --project fails clearly for an unknown project name" {
+  "$SUPA" link --account company --project-ref refC1 --json
+  run "$SUPA" switch --project nope
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no project named"* ]]
+}
+
+# ---- open (new) ----
+
+@test "open hands the dashboard URL to the (stubbed) opener" {
+  "$SUPA" link --account company --project-ref refC1 --json
+  run "$SUPA" open
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"https://supabase.com/dashboard/project/refC1"* ]]
+}
+
+@test "open fails when the directory is not linked" {
+  run "$SUPA" open
+  [ "$status" -ne 0 ]
+}
+
+# ---- project-list caching (new) ----
+
+@test "list --verify reuses one cached project list across directories on the same account" {
+  mkdir -p "$WORK/a" "$WORK/b"
+  ( cd "$WORK/a" && "$SUPA" link --account company --project-ref refC1 --json )
+  ( cd "$WORK/b" && "$SUPA" link --account company --project-ref refC2 --json )
+  run "$SUPA" list --json --verify
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.links[].verified] == ["true","true"]' >/dev/null
+  [ -f "$SUPA_MCP_CONFIG_DIR/cache/company.json" ]
+}
+
+@test "projects --refresh bypasses a warm cache" {
+  "$SUPA" projects company --json >/dev/null
+  [ -f "$SUPA_MCP_CONFIG_DIR/cache/company.json" ]
+  run "$SUPA" projects company --json --refresh
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e 'map(.ref) | index("refC1")' >/dev/null
+}
+
+# ---- init (new) ----
+
+@test "init fails cleanly with no accounts and no terminal" {
+  run "$SUPA" account remove company
+  run "$SUPA" init
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not a terminal"* ]] || [[ "$output" == *"account add"* ]]
 }

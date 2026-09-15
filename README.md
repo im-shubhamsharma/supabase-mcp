@@ -157,29 +157,58 @@ supa-mcp link --account company --project-ref abcd1234
 #    Keychain prompts. The Supabase MCP is now connected to that project.
 ```
 
-Inside Claude Code you can drive the same steps with `/supa-add`, `/supa-link`,
-`/supa-switch`, `/supa-status`, `/supa-list`, `/supa-branches`, and `/supa-unlink`.
+Inside Claude Code you can drive the same steps with `/supa-init`, `/supa-add`,
+`/supa-link`, `/supa-switch`, `/supa-status`, `/supa-list`, `/supa-branches`,
+`/supa-open`, and `/supa-unlink`.
+
+Or skip straight to it with a single guided command:
+
+```
+supa-mcp init
+```
+
+This adds an account (if you don't have one yet) and links the current directory in one
+pass, reusing the same prompts as `account add` and `link`.
 
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
-| `supa-mcp account add <name>` | Store a PAT in the Keychain (hidden prompt). |
+| `supa-mcp init` | Guided setup: add an account (if needed) and link this directory. |
+| `supa-mcp account add <name> [--force]` | Store a PAT in the Keychain (hidden prompt). Validated against the API before storing. |
 | `supa-mcp account list [--json]` | List registered accounts. |
 | `supa-mcp account remove <name>` | Delete an account and its token. |
-| `supa-mcp whoami <account> [--json]` | Show the orgs and projects a token can see. |
-| `supa-mcp projects <account> [--json]` | List an account's projects. |
+| `supa-mcp whoami <account> [--json] [--refresh]` | Show the orgs and projects a token can see. |
+| `supa-mcp projects <account> [--json] [--refresh]` | List an account's projects. |
 | `supa-mcp branches <account> <ref> [--json]` | List a project's Supabase branches. |
-| `supa-mcp link --account <n> --project-ref <ref> [--write] [--name <server>]` | Write `./.mcp.json`. |
-| `supa-mcp switch [--account <n>] [--project-ref <ref>] [--write]` | Re-point this directory's binding. |
-| `supa-mcp status [--json] [--no-verify]` | Show and verify this directory's binding. |
+| `supa-mcp link --account <n> (--project-ref <ref> \| --project <name>) [--write] [--name <server>]` | Write `./.mcp.json`. |
+| `supa-mcp switch [--account <n>] [--project-ref <ref> \| --project <name>] [--branch <name>] [--write]` | Re-point this directory's binding. |
+| `supa-mcp status [--json] [--no-verify] [--refresh]` | Show and verify this directory's binding. |
 | `supa-mcp statusline [--name <server>]` | One-line binding summary (for status lines). |
-| `supa-mcp list [--json] [--verify]` | Every linked directory on this machine. |
-| `supa-mcp unlink [--name <server>]` | Remove the server from `./.mcp.json`. |
+| `supa-mcp list [--json] [--verify] [--refresh]` | Every linked directory on this machine. |
+| `supa-mcp open [--name <server>]` | Open this directory's project in the Supabase dashboard. |
+| `supa-mcp unlink [--name <server>]` | Remove the server from `./.mcp.json` (deletes the file if nothing else is linked). |
 | `supa-mcp export` / `supa-mcp import [file]` | Move accounts + links between machines (no secrets). |
 | `supa-mcp doctor` | Check deps, keychain backend, and token health. |
 | `supa-mcp version` | Print the version. |
 | `supa-mcp install [dir]` | Put `supa-mcp` on PATH. |
+
+Project lists (`whoami`, `projects`, `status`, `list --verify`) are cached for 5 minutes per
+account so these commands are fast even across many linked directories. Pass `--refresh` to
+force a live lookup.
+
+### Linking by name
+
+`link` and `switch` accept a project name instead of a ref:
+
+```
+supa-mcp link --account company --project company-app
+supa-mcp switch --project company-staging
+supa-mcp switch --branch preview     # switch to a Supabase branch of the current project
+```
+
+A name that matches more than one project fails with a clear "ambiguous" error — use
+`--project-ref` in that case.
 
 ## The wrong-account guard
 
@@ -205,7 +234,13 @@ are pinned and reminds you to run `/supa-status`; in an unlinked directory it st
 
 `supa-mcp branches <account> <project-ref>` lists a project's branches. A Supabase branch has
 its own project ref, so to point a directory at a branch database, link or switch to that
-branch's ref:
+branch's ref — either by name:
+
+```
+supa-mcp switch --branch <branch-name>
+```
+
+or by ref, if you already have it:
 
 ```
 supa-mcp switch --project-ref <branch-ref>
@@ -253,7 +288,8 @@ one shot.
 | The Supabase MCP does not appear in Claude Code | You must start a **fresh** Claude Code session in the linked directory. Accept the workspace-trust prompt. Check the binding with `supa-mcp status`. |
 | A macOS Keychain prompt keeps appearing | Choose **Always Allow** on the `supa-mcp` prompt so it stays silent afterward. |
 | `status` shows `account_verified: false` | The pinned project does not belong to the linked account (wrong account). Re-link with the correct `--account`. See [the wrong-account guard](#the-wrong-account-guard). |
-| `token stored, but the validation call failed` | The token is invalid or the network is down. Create a new token and re-run `supa-mcp account add <name>`. |
+| `token rejected by Supabase` / `token validation failed` | The token is invalid or expired. Create a new one and re-run `supa-mcp account add <name>`, or add `--force` to store it anyway. |
+| `could not reach the Supabase API to validate the token` | Network is down. Retry once you're back online, or add `--force` to store the token without validating. |
 | Writes are rejected | Links are read-only by default. Re-link with `--write` to allow writes from that directory. |
 
 ## Uninstall

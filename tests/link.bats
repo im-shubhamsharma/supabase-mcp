@@ -56,8 +56,47 @@ setup() { setup_supa; seed_account company; }
   "$SUPA" link --account company --project-ref refC1 --json
   run "$SUPA" unlink
   [ "$status" -eq 0 ]
-  run cat "$WORK/.mcp.json"
-  echo "$output" | jq -e '.mcpServers | has("supabase") | not' >/dev/null
+  # The only server was removed, so .mcp.json itself is gone too (see the
+  # dedicated "deletes .mcp.json" test below).
+  [ ! -f "$WORK/.mcp.json" ]
   run cat "$SUPA_MCP_CONFIG_DIR/links.json"
   [[ "$output" != *"$WORK"* ]]
+}
+
+@test "unlink deletes .mcp.json once it has no servers left" {
+  "$SUPA" link --account company --project-ref refC1 --json
+  run "$SUPA" unlink
+  [ "$status" -eq 0 ]
+  [ ! -f "$WORK/.mcp.json" ]
+}
+
+@test "unlink keeps .mcp.json when another server remains" {
+  "$SUPA" link --account company --project-ref refC1 --json
+  "$SUPA" link --account company --project-ref refC2 --name staging --json
+  run "$SUPA" unlink
+  [ "$status" -eq 0 ]
+  [ -f "$WORK/.mcp.json" ]
+  run cat "$WORK/.mcp.json"
+  echo "$output" | jq -e '.mcpServers | has("staging")' >/dev/null
+}
+
+@test "link --project resolves a project by name" {
+  run "$SUPA" link --account company --project company-staging --json
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.project_ref == "refC2"' >/dev/null
+  run cat "$WORK/.mcp.json"
+  [[ "$output" == *"refC2"* ]]
+}
+
+@test "link --project fails clearly for an unknown project name" {
+  run "$SUPA" link --account company --project nope
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no project named"* ]]
+}
+
+@test "link records the project name in the links registry" {
+  run "$SUPA" link --account company --project-ref refC1 --json
+  [ "$status" -eq 0 ]
+  run cat "$SUPA_MCP_CONFIG_DIR/links.json"
+  [[ "$output" == *"company-app"* ]]
 }

@@ -625,21 +625,28 @@ cmd_switch() {
   kc_has "$account" || die "no token in keychain for '$account'"
 
   local pname=""
-  [ -n "${SUPA_MCP_DEBUG:-}" ] && warn "DEBUG pre: project_query='$project_query' ref='$ref' account='$account' refresh='$refresh'"
+  if [ -n "${SUPA_MCP_DEBUG:-}" ]; then
+    {
+      echo "=== $(date +%s) cmd_switch pid=$$ ==="
+      echo "pre: project_query='$project_query' ref='$ref' account='$account' refresh='$refresh'"
+    } >> "$SUPA_MCP_DEBUG" 2>&1
+  fi
   if [ -n "$project_query" ] && [ -z "$ref" ]; then
     local pj match n
     pj="$(projects_json_cached "$account" "$refresh")" || die "could not list projects for '$account'"
-    [ -n "${SUPA_MCP_DEBUG:-}" ] && warn "DEBUG pj='$pj'"
+    [ -n "${SUPA_MCP_DEBUG:-}" ] && printf 'pj=%s\n' "$pj" >> "$SUPA_MCP_DEBUG" 2>&1
     match="$(printf '%s' "$pj" | jq -c --arg q "$project_query" '[.[] | select(.name==$q)]')"
     n="$(printf '%s' "$match" | jq 'length')"
-    [ -n "${SUPA_MCP_DEBUG:-}" ] && warn "DEBUG match='$match' n='$n'"
+    [ -n "${SUPA_MCP_DEBUG:-}" ] && printf 'match=%s n=%s\n' "$match" "$n" >> "$SUPA_MCP_DEBUG" 2>&1
     case "$n" in
       0) die "no project named '$project_query' in account '$account' (run: supa-mcp projects $account)" ;;
       1) ref="$(printf '%s' "$match" | jq -r '.[0].ref')"; pname="$project_query" ;;
       *) die "'$project_query' matches $n projects in account '$account' — use --project-ref to disambiguate" ;;
     esac
+  else
+    [ -n "${SUPA_MCP_DEBUG:-}" ] && echo "SKIPPED project_query block" >> "$SUPA_MCP_DEBUG" 2>&1
   fi
-  [ -n "${SUPA_MCP_DEBUG:-}" ] && warn "DEBUG post: ref='$ref' pname='$pname'"
+  [ -n "${SUPA_MCP_DEBUG:-}" ] && printf 'post: ref=%s pname=%s\n' "$ref" "$pname" >> "$SUPA_MCP_DEBUG" 2>&1
 
   if [ -n "$branch_query" ]; then
     local base_ref="${ref:-$cur_ref}" bj match n

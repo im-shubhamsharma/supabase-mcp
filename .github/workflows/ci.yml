@@ -42,4 +42,8 @@ jobs:
 
       - name: Debug single test with tracing
         if: always()
-        run: SUPA_MCP_DEBUG=1 bats tests/features.bats -f "switch --project resolves a project by name"
+        run: |
+          rm -f /tmp/supa_debug.log
+          SUPA_MCP_DEBUG=/tmp/supa_debug.log bats tests/features.bats -f "switch --project resolves a project by name" || true
+          echo "=== /tmp/supa_debug.log ==="
+          cat /tmp/supa_debug.log || echo "(no debug file written)"

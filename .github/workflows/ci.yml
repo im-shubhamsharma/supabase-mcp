@@ -41,14 +41,13 @@ jobs:
       - name: Debug failing test (trace)
         if: always()
         run: |
-          bash -x bin/supa-mcp account add company --token TOKEN_company --force 2>&1 | tail -5 || true
-          echo "---setup---"
+          SUPA="$GITHUB_WORKSPACE/bin/supa-mcp"
           export SUPA_MCP_CONFIG_DIR="$(mktemp -d)"
           export SUPA_MCP_TEST_KC="$(mktemp -d)"
           export SUPA_MCP_KEYCHAIN=security
-          export PATH="$PWD/tests/stubs:$PATH"
-          bin/supa-mcp account add company --token TOKEN_company --force
+          export PATH="$GITHUB_WORKSPACE/tests/stubs:$PATH"
+          "$SUPA" account add company --token TOKEN_company --force
           mkdir -p /tmp/dbgwork && cd /tmp/dbgwork
-          bin/supa-mcp link --account company --project-ref refC1 --json
+          "$SUPA" link --account company --project-ref refC1 --json
           echo "---switch with trace---"
-          bash -x "$GITHUB_WORKSPACE/bin/supa-mcp" switch --project company-staging --json 2>&1 | tail -80
+          bash -x "$SUPA" switch --project company-staging --json 2>&1 | tail -100

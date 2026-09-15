@@ -325,7 +325,9 @@ mcp_entry() { # file server
 link_write() { # account ref server ro json [project_name]
   local account="$1" ref="$2" server="$3" ro="$4" json="$5" pname="${6:-}"
   local url helper file tmp mode
+  [ -n "${SUPA_MCP_DEBUG:-}" ] && printf 'link_write ENTRY: account=%s ref=%s server=%s ro=%s json=%s pname=%s\n' "$account" "$ref" "$server" "$ro" "$json" "$pname" >> "$SUPA_MCP_DEBUG" 2>&1
   url="$(build_url "$ref" "$ro")"
+  [ -n "${SUPA_MCP_DEBUG:-}" ] && printf 'link_write after build_url: ref=%s url=%s\n' "$ref" "$url" >> "$SUPA_MCP_DEBUG" 2>&1
   helper="supa-mcp headers --account $account"
   file="$(mcp_file)"
 
@@ -350,6 +352,7 @@ link_write() { # account ref server ro json [project_name]
   mode="$([ "$ro" = "true" ] && echo read-only || echo read-write)"
   links_upsert "$(pwd)" "$server" "$account" "$ref" "$mode" "$pname"
 
+  [ -n "${SUPA_MCP_DEBUG:-}" ] && printf 'link_write pre-print: ref=%s pname=%s\n' "$ref" "$pname" >> "$SUPA_MCP_DEBUG" 2>&1
   if [ "$json" = "1" ]; then
     jq -n --arg account "$account" --arg ref "$ref" --arg server "$server" \
           --arg mode "$mode" --arg file "$file" --arg pname "$pname" \

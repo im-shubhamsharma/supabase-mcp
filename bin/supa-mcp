@@ -354,6 +354,16 @@ link_write() { # account ref server ro json [project_name]
 
   [ -n "${SUPA_MCP_DEBUG:-}" ] && printf 'link_write pre-print: ref=%s pname=%s\n' "$ref" "$pname" >> "$SUPA_MCP_DEBUG" 2>&1
   if [ "$json" = "1" ]; then
+    if [ -n "${SUPA_MCP_DEBUG:-}" ]; then
+      local __out
+      __out="$(jq -n --arg account "$account" --arg ref "$ref" --arg server "$server" \
+            --arg mode "$mode" --arg file "$file" --arg pname "$pname" \
+            '{ok:true, account:$account, project_ref:$ref, project_name:$pname, server:$server, mode:$mode, file:$file}')"
+      printf 'link_write captured jq output: %s\n' "$__out" >> "$SUPA_MCP_DEBUG" 2>&1
+      printf '%s\n' "$__out"
+      printf 'link_write AFTER printf to real stdout\n' >> "$SUPA_MCP_DEBUG" 2>&1
+      return 0
+    fi
     jq -n --arg account "$account" --arg ref "$ref" --arg server "$server" \
           --arg mode "$mode" --arg file "$file" --arg pname "$pname" \
           '{ok:true, account:$account, project_ref:$ref, project_name:$pname, server:$server, mode:$mode, file:$file}'

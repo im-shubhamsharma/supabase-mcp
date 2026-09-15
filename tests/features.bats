@@ -157,7 +157,7 @@ setup() { setup_supa; seed_account company; }
 # ---- name-based switch/branch resolution (new) ----
 
 @test "switch --project resolves a project by name on the same account" {
-  "$SUPA" link --account company --project-ref refC1 --json
+  "$SUPA" link --account company --project-ref refC1 --json >/dev/null
   run "$SUPA" switch --project company-staging --json
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.project_ref == "refC2"' >/dev/null

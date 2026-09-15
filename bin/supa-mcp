@@ -80,9 +80,15 @@ valid_account_name() { # name
   esac
 }
 
-# Portable file mtime (epoch seconds): BSD/macOS `stat -f`, GNU/Linux `stat -c`.
+# Portable file mtime (epoch seconds). Try GNU (`stat -c`) first: it fails
+# cleanly with a nonzero exit on BSD/macOS stat, whereas the reverse order is
+# unsafe — BSD's `-f` flag means something different to GNU coreutils' stat
+# (filesystem info, not file info), so `stat -f %m` on Linux exits 0 while
+# printing an unrelated multi-line dump instead of erroring, which silently
+# corrupts the caller (e.g. a later `$((now - mtime))` blows up under `set -u`
+# when GNU stat's dump happens to start with the word "File").
 file_mtime() {
-  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null
+  stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null
 }
 
 # ---------------------------------------------------------------------------
@@ -262,7 +268,8 @@ cache_get() {
   local f mtime now age
   f="$(cache_file "$1")"
   [ -f "$f" ] || return 1
-  mtime="$(file_mtime "$f")" && [ -n "$mtime" ] || return 1
+  mtime="$(file_mtime "$f")" || return 1
+  case "$mtime" in ''|*[!0-9]*) return 1 ;; esac
   now="$(date +%s)"
   age=$((now - mtime))
   [ "$age" -le "$2" ] || return 1
@@ -335,11 +342,13 @@ link_write() { # account ref server ro json [project_name]
 
   [ -n "$pname" ] || pname="$(project_name_lookup "$account" "$ref")"
 
+  local existing_raw
+  existing_raw="$(cat "$file" 2>/dev/null || printf '{}')"
   tmp="$(mktemp)"
   jq -n \
-     --slurpfile existing <(cat "$file" 2>/dev/null || printf '{}') \
+     --arg existing_raw "$existing_raw" \
      --arg key "$server" --arg url "$url" --arg helper "$helper" '
-       ($existing[0] // {}) as $base
+       ($existing_raw | fromjson) as $base
        | $base
        | .mcpServers = ((.mcpServers // {}) + {
            ($key): {type:"http", url:$url, headersHelper:$helper}

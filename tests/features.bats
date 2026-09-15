@@ -159,6 +159,15 @@ setup() { setup_supa; seed_account company; }
 @test "switch --project resolves a project by name on the same account" {
   "$SUPA" link --account company --project-ref refC1 --json >/dev/null
   run "$SUPA" switch --project company-staging --json
+  if [ -n "${SUPA_MCP_DEBUG:-}" ]; then
+    {
+      echo "=== bats output for switch --project test ==="
+      echo "status=$status"
+      printf 'output=[%s]\n' "$output"
+      printf 'output hexdump:\n'
+      printf '%s' "$output" | od -c | head -20
+    } >> "$SUPA_MCP_DEBUG" 2>&1
+  fi
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.project_ref == "refC2"' >/dev/null
 }
